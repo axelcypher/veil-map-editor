@@ -18,9 +18,9 @@ import {
   type PointGeometry, type Project, type River,
 } from './types'
 
-export const PROJECT_FILTER = [{ name: 'Veil-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
-const SAVE_FILTER = [{ name: 'Veil-Projekt', extensions: ['veil'] }]
-export const ARCHIVE_FILTER = [{ name: 'Veil-Archiv mit Gelände', extensions: ['veilmap'] }]
+export const PROJECT_FILTER = [{ name: 'VEIL-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
+const SAVE_FILTER = [{ name: 'VEIL-Projekt', extensions: ['veil'] }]
+export const ARCHIVE_FILTER = [{ name: 'VEIL-Archiv mit Gelände', extensions: ['veilmap'] }]
 /** the open file is a .veilmap archive; saving writes the archive again */
 export const fileIsArchive = signal(false)
 export const IMAGE_FILTER = [{ name: 'Raster', extensions: ['tif', 'tiff', 'png', 'r16', 'raw', 'jpg', 'jpeg', 'webp'] }]

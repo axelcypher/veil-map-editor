@@ -332,9 +332,9 @@ pub fn open(path: &Path, cache_root: &Path, progress: &dyn Fn(&str, f32)) -> Res
         entry.read_to_string(&mut text).map_err(|e| e.to_string())?;
         Ok(text)
     };
-    let manifest: Manifest = serde_json::from_str(&read_text(&mut zip, MANIFEST)?).map_err(|e| format!("Kein Veil-Archiv: {e}"))?;
+    let manifest: Manifest = serde_json::from_str(&read_text(&mut zip, MANIFEST)?).map_err(|e| format!("Kein VEIL-Archiv: {e}"))?;
     if manifest.format != "veilmap" {
-        return Err("Kein Veil-Archiv.".into());
+        return Err("Kein VEIL-Archiv.".into());
     }
     let project = read_text(&mut zip, PROJECT)?;
 

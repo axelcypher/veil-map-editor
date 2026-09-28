@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Dialoge zum Öffnen und Speichern; Dateizugriff läuft über eigene Befehle",
+  "description": "Dialoge zum Öffnen und Speichern, die eigene Fensterleiste; Dateizugriff läuft über eigene Befehle",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
     "dialog:default"
   ]
 }

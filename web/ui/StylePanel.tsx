@@ -8,6 +8,10 @@ import { Check, Color, Field, Num, Section, Select, Text } from './components'
 
 const STYLED: BuiltinLayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
 const FONTS = [
+  { id: '"Cinzel", serif', name: 'Cinzel' },
+  { id: '"Forum", serif', name: 'Forum' },
+  { id: '"Marcellus", serif', name: 'Marcellus' },
+  { id: '"Aref Ruqaa Ink", serif', name: 'Aref Ruqaa Ink' },
   { id: 'Georgia, serif', name: 'Georgia (Serif)' },
   { id: '"Palatino Linotype", "Book Antiqua", serif', name: 'Palatino' },
   { id: '"Times New Roman", serif', name: 'Times' },

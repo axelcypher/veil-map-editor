@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import type { Platform } from './types'
 
@@ -20,7 +21,31 @@ function treeToPath(uri: string) {
   return rest.join(':') ? `${base}/${rest.join(':')}` : base
 }
 
+const appWindow = () => getCurrentWindow()
+
 export const tauriPlatform: Platform = {
+  window: mobile
+    ? undefined
+    : {
+        minimize: () => appWindow().minimize(),
+        toggleMaximize: () => appWindow().toggleMaximize(),
+        close: () => appWindow().close(),
+        isMaximized: () => appWindow().isMaximized(),
+        onResized(handler) {
+          let stop: (() => void) | null = null
+          let cancelled = false
+          appWindow()
+            .onResized(() => handler())
+            .then(unlisten => {
+              if (cancelled) unlisten()
+              else stop = unlisten
+            })
+          return () => {
+            cancelled = true
+            stop?.()
+          }
+        },
+      },
   kind: 'desktop',
   mobile,
   async pickFile(title, filters) {

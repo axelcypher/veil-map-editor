@@ -177,7 +177,7 @@ export const KIND_NAMES: Record<EntityKind, [string, string]> = {
 /** fills in everything a file from an older or hand-edited version lacks */
 export function parseProject(text: string): Project {
   const data = JSON.parse(text) as Partial<Project> & { format?: string }
-  if (data.format !== 'veil-project') throw new Error('Keine Veil-Projektdatei.')
+  if (data.format !== 'veil-project') throw new Error('Keine VEIL-Projektdatei.')
   const fresh = newProject()
   const merged = { ...fresh, ...data } as Project
   merged.catalog = { ...fresh.catalog, ...data.catalog }

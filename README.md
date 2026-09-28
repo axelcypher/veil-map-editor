@@ -1,4 +1,4 @@
-# Veil Map Editor
+# VEIL Map Editor
 
 Supplement-Editor für die Weltkarte von Thessari: Städte, Routen, Staaten, Provinzen, Kulturen, Religionen, Zonen, Marker, Beschriftungen, Militär und Diplomatie auf einer fertigen Karte. Tauri-Desktop-App, die Logik liegt vollständig im Frontend (`web/`).
 
@@ -24,6 +24,12 @@ Supplement-Editor für die Weltkarte von Thessari: Städte, Routen, Staaten, Pro
 | `src-tauri/gen/android/` | Android-Projekt (von `tauri android init`) |
 
 Die Rasterarbeit übernimmt Rust selbst, GDAL wird nicht gebraucht: Der Import schreibt Relief- und Schummerungskacheln (256 px, Zoomstufen bis zur vollen Auflösung), ein 4096 × 2048-Höhenraster, die Küstenpolygone und die vollen Höhen in den App-Cache (`%LOCALAPPDATA%\de.veil.map-editor`). Fehlt der Cache, wird er beim Öffnen aus der Quelldatei neu gebaut, mit allen Prüfungen.
+
+## Oberfläche
+
+Anthrazit mit entsättigtem Purpur als Akzent und kaltem Silber als zweitem Akzent, runde Knöpfe. Oben links stehen Logo und die Reiter der Seitenleiste (Ebenen, Stil, Daten, Projekt) als Text-Tabs über der Seitenleiste, rechts Datei, Speichern, Rückgängig/Wiederholen und 3D. Auf dem Desktop ersetzt diese Leiste die Fensterleiste des Systems: freie Flächen verschieben das Fenster, Doppelklick maximiert. Der Schriftzug VEIL steht in Aref Ruqaa Ink; Cinzel, Forum und Marcellus stehen außerdem für Beschriftungen zur Wahl. Alle Schriften sind in der App enthalten.
+
+Das Logo liegt als Quelle in `src-tauri/icons/the_veil_logo_map_editor.svg`. Daraus abgeleitet: `web/assets/logo.svg` (einfarbig, folgt der Textfarbe), `public/favicon.svg` (dunkel oder weiß je nach System-Theme), `src-tauri/icons/app-icon.svg` (weiß auf Anthrazit, Quelle für `npm run tauri icon`) und `src-tauri/icons/android-foreground.svg` (Vordergrund und monochrome Ebene des adaptiven Android-Icons; Android 13+ färbt es passend zum Theme).
 
 ## Satellitenbild
 
