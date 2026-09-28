@@ -45,6 +45,11 @@ freehandSmoothing.subscribe(value => {
   }
 })
 
+/** draw freehand without holding Shift – for touch screens */
+export const freehand = signal(false)
+/** a tap on a vertex deletes it, instead of Alt+click */
+export const deleteVertices = signal(false)
+
 export const placeType = signal<Record<string, string>>({ marker: 'poi', route: 'road', city: 'town' })
 /** a coordinate picked on the map for a form (control points) */
 export const picked = signal<{ purpose: string; lonLat: [number, number] } | null>(null)

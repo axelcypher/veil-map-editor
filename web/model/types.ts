@@ -196,6 +196,47 @@ export interface TerrainRef {
   checks: CheckResult[]
 }
 
+/** the colour render of the terrain from Gaea, shown as a map style */
+export interface SatelliteRef {
+  source: string
+  id: string
+  hash: string
+  cropSquare: boolean
+  importedAt: number
+}
+
+/** how a .veilmap archive is written */
+export interface ArchiveOptions {
+  /** WebP quality of the tiles, 1–100 */
+  quality: number
+  lossless: boolean
+  /** exact heights for the point info and conflict checks; the ≈10 km grid always comes along */
+  heights: 'none' | 'half' | 'full'
+  satellite: boolean
+  koppen: boolean
+}
+
+/** the globe in the 3D window and its picture and animation exports */
+export interface GlobeOptions {
+  /** what the globe wears: the map as shown, or one raster alone */
+  source: 'map' | 'satellite' | 'relief'
+  /** degrees per second; the sign is the direction */
+  speed: number
+  rotate: boolean
+  /** axial tilt as seen by the viewer, degrees */
+  tilt: number
+  /** height relief on the surface, 0 = smooth ball */
+  relief: number
+  sun: { on: boolean; azimuth: number; elevation: number; night: number; softness: number }
+  atmosphere: { on: boolean; color: string; strength: number; thickness: number }
+  graticule: { on: boolean; step: number; color: string; opacity: number }
+  clouds: { on: boolean; cover: number; opacity: number; scale: number; seed: number; turns: number }
+  background: { kind: 'transparent' | 'color' | 'stars'; color: string }
+  /** field of view, degrees */
+  fov: number
+  export: { width: number; height: number; frames: number; fps: number }
+}
+
 export interface KoppenRef {
   source: string
   id: string
@@ -257,7 +298,7 @@ export interface LayerStyle {
 }
 
 export type LayerId =
-  | 'relief' | 'shade' | 'coast' | 'koppen' | 'rivers' | 'cultures' | 'religions' | 'states' | 'provinces' | 'zones'
+  | 'relief' | 'satellite' | 'shade' | 'coast' | 'koppen' | 'rivers' | 'cultures' | 'religions' | 'states' | 'provinces' | 'zones'
   | 'routes' | 'cities' | 'markers' | 'regiments' | 'labels' | 'graticule' | 'texture'
 
 export interface LayerSetting {
@@ -311,6 +352,7 @@ export interface Project {
   /** metres; the planet is a sphere */
   planetRadius: number
   terrain: TerrainRef | null
+  satellite: SatelliteRef | null
   koppen: KoppenRef | null
   riverImport: RiverImportRef | null
   controlPoints: ControlPoint[]
@@ -335,5 +377,7 @@ export interface Project {
   stylePresets: StylePreset[]
   display: Display
   obsidian: { vaultPath: string; vaultName: string }
+  archive: ArchiveOptions
+  globe: GlobeOptions
   view: { center: LonLat; zoom: number }
 }

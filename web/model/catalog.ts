@@ -182,6 +182,7 @@ const style = (partial: Partial<LayerStyle>): LayerStyle => ({
 
 export const defaultStyle = (): Record<LayerId, LayerStyle> => ({
   relief: style({}),
+  satellite: style({}),
   shade: style({}),
   coast: style({ stroke: '#3d4b52', strokeWidth: 0.8, fill: '#efe6cf', fillOpacity: 1, showLabels: false }),
   koppen: style({ showLabels: false }),
@@ -203,6 +204,7 @@ export const defaultStyle = (): Record<LayerId, LayerStyle> => ({
 /** bottom to top */
 export const LAYER_NAMES: Record<LayerId, string> = {
   relief: 'Relief (Höhenfarben)',
+  satellite: 'Satellitenbild (Gaea)',
   coast: 'Landfläche und Küste',
   shade: 'Schummerung',
   koppen: 'Klima (Köppen)',
@@ -223,6 +225,7 @@ export const LAYER_NAMES: Record<LayerId, string> = {
 
 export const defaultLayers = (): LayerSetting[] => [
   { id: 'relief', visible: true, opacity: 1 },
+  { id: 'satellite', visible: false, opacity: 1 },
   { id: 'coast', visible: false, opacity: 1 },
   { id: 'shade', visible: false, opacity: 0.6 },
   { id: 'koppen', visible: false, opacity: 0.7 },
@@ -246,11 +249,12 @@ const visibleSet = (ids: LayerId[]) => defaultLayers().map(l => ({ id: l.id, vis
 export const BUILTIN_LAYER_PRESETS: LayerPreset[] = [
   { id: 'political', name: 'Politisch', layers: visibleSet(['relief', 'rivers', 'states', 'provinces', 'routes', 'cities', 'labels']) },
   { id: 'physical', name: 'Physisch', layers: visibleSet(['relief', 'rivers', 'labels', 'graticule']) },
+  { id: 'satellite', name: 'Satellit', layers: visibleSet(['satellite', 'rivers', 'labels']) },
   { id: 'climate', name: 'Klima', layers: visibleSet(['shade', 'koppen', 'rivers', 'labels']) },
   { id: 'cultural', name: 'Kulturen und Religionen', layers: visibleSet(['coast', 'rivers', 'cultures', 'religions', 'cities', 'labels']) },
   { id: 'military', name: 'Militär', layers: visibleSet(['relief', 'rivers', 'states', 'routes', 'cities', 'regiments', 'labels']) },
   { id: 'atlas', name: 'Atlas', layers: visibleSet(['coast', 'shade', 'rivers', 'states', 'routes', 'cities', 'markers', 'labels', 'graticule', 'texture']) },
-  { id: 'all', name: 'Alles', layers: defaultLayers().map(l => ({ id: l.id, visible: l.id !== 'texture' && l.id !== 'shade' })) },
+  { id: 'all', name: 'Alles', layers: defaultLayers().map(l => ({ id: l.id, visible: l.id !== 'texture' && l.id !== 'shade' && l.id !== 'satellite' })) },
 ]
 
 export const neutralFilter = (): Filter => ({ grayscale: 0, sepia: 0, saturate: 1, brightness: 1, contrast: 1, hue: 0, blur: 0, invert: 0 })

@@ -1,7 +1,7 @@
 // What the page knows about the imported terrain: meta data, a coarse height grid, the coast
 // polygons and the climate classes. The terrain is read-only; nothing here writes back.
 import { signal } from '@preact/signals'
-import { platform, type KoppenMeta, type TerrainMeta } from '../platform'
+import { platform, type KoppenMeta, type SatelliteMeta, type TerrainMeta } from '../platform'
 import type { AreaGeometry, LonLat } from './types'
 
 export interface TerrainState {
@@ -12,6 +12,7 @@ export interface TerrainState {
 
 export const terrain = signal<TerrainState | null>(null)
 export const koppen = signal<{ meta: KoppenMeta; classes: Uint8Array } | null>(null)
+export const satellite = signal<SatelliteMeta | null>(null)
 
 async function fetchBinary(path: string) {
   const response = await fetch(platform.cacheUrl(path))
@@ -34,6 +35,12 @@ export async function loadKoppenData(id: string) {
   const meta = (await (await fetch(platform.cacheUrl(`koppen/${id}/meta.json`))).json()) as KoppenMeta
   const classes = new Uint8Array(await fetchBinary(`koppen/${meta.id}/classes.u8`))
   koppen.value = { meta, classes }
+}
+
+export async function loadSatelliteData(id: string) {
+  const response = await fetch(platform.cacheUrl(`satellite/${id}/meta.json`))
+  if (!response.ok) throw new Error('Kein Cache für das Satellitenbild vorhanden.')
+  satellite.value = (await response.json()) as SatelliteMeta
 }
 
 export function clearTerrain() {

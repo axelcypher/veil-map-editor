@@ -26,9 +26,11 @@ import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
 import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
-import { freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
+import { deleteVertices, freehand, freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
+import { altKeyOnly, shiftKeyOnly, singleClick } from 'ol/events/condition'
+import type MapBrowserEvent from 'ol/MapBrowserEvent'
 import { shownGeometry } from '../model/terrain'
-import type { KoppenMeta, TerrainMeta } from '../platform'
+import type { KoppenMeta, SatelliteMeta, TerrainMeta } from '../platform'
 import { platform } from '../platform'
 import { entityStyle, hexToRgb, SELECT_COLOR, type StyleContext } from './styles'
 import { textureUrl } from './texture'
@@ -79,6 +81,30 @@ function fromOl(geometry: Geometry): Entity['geometry'] {
 export const filterCss = (f: Filter | undefined) =>
   !f ? '' : `grayscale(${f.grayscale}) sepia(${f.sepia}) saturate(${f.saturate}) brightness(${f.brightness}) contrast(${f.contrast}) hue-rotate(${f.hue}deg) blur(${f.blur}px) invert(${f.invert})`
 
+/** Shift, or the freehand switch for touch screens */
+const freehandCondition = (event: MapBrowserEvent) => freehand.peek() || shiftKeyOnly(event)
+/** Alt+click, or a tap while the delete switch is on */
+const deleteCondition = (event: MapBrowserEvent) => singleClick(event) && (deleteVertices.peek() || altKeyOnly(event))
+
+/** a tile pyramid from the cache: level z is 512·2^z px wide */
+function tileSource(meta: { maxZoom: number; tileSize: number; tileExt?: string }, path: string) {
+  const ext = meta.tileExt || 'png'
+  return new TileImage({
+    projection: 'EPSG:4326',
+    // tiles come from the veil:// protocol, another origin; without this the 3D view cannot read the map
+    crossOrigin: 'anonymous',
+    tileGrid: new TileGrid({
+      extent: EXTENT,
+      origin: [-180, 90],
+      resolutions: Array.from({ length: meta.maxZoom + 1 }, (_, z) => BASE_RESOLUTION / 2 ** z),
+      tileSize: meta.tileSize,
+    }),
+    wrapX: false,
+    interpolate: true,
+    tileUrlFunction: ([z, x, y]) => platform.cacheUrl(`${path}/${z}/${x}/${y}.${ext}`),
+  })
+}
+
 export class MapView {
   readonly map: OlMap
   readonly layers = {} as Record<LayerId, BaseLayer>
@@ -88,6 +114,8 @@ export class MapView {
   private readonly measureSource = new VectorSource()
   private readonly coastSource = new VectorSource()
   private interactions: Interaction[] = []
+  /** the drawing in progress, for the touch buttons */
+  private activeDraw: Draw | null = null
   private context: StyleContext
   private styleVersion = 0
   private project: Project
@@ -123,6 +151,7 @@ export class MapView {
 
     // terrain tiles come later, in setTerrain
     this.layers.relief = new TileLayer({ className: 'layer-relief' })
+    this.layers.satellite = new TileLayer({ className: 'layer-satellite' })
     this.layers.shade = new TileLayer({ className: 'layer-shade' })
     this.layers.coast = new VectorLayer({ className: 'layer-coast', source: this.coastSource, style: () => this.coastStyle() })
     this.layers.koppen = new ImageLayer({ className: 'layer-koppen' })
@@ -207,24 +236,12 @@ export class MapView {
       this.coastSource.clear()
       return
     }
-    const grid = new TileGrid({
-      extent: EXTENT,
-      origin: [-180, 90],
-      resolutions: Array.from({ length: meta.maxZoom + 1 }, (_, z) => BASE_RESOLUTION / 2 ** z),
-      tileSize: meta.tileSize,
-    })
-    const source = (kind: string) =>
-      new TileImage({
-        projection: 'EPSG:4326',
-        // tiles come from the veil:// protocol, another origin; without this the 3D view cannot read the map
-        crossOrigin: 'anonymous',
-        tileGrid: grid,
-        wrapX: false,
-        interpolate: true,
-        tileUrlFunction: ([z, x, y]) => platform.cacheUrl(`terrain/${meta.id}/tiles/${kind}/${z}/${x}/${y}.png`),
-      })
-    relief.setSource(source('relief'))
-    shade.setSource(source('shade'))
+    relief.setSource(tileSource(meta, `terrain/${meta.id}/tiles/relief`))
+    shade.setSource(tileSource(meta, `terrain/${meta.id}/tiles/shade`))
+  }
+
+  setSatellite(meta: SatelliteMeta | null) {
+    ;(this.layers.satellite as TileLayer<TileImage>).setSource(meta ? tileSource(meta, `satellite/${meta.id}/tiles`) : null)
   }
 
   setLand(land: AreaGeometry | null) {
@@ -470,9 +487,11 @@ export class MapView {
     this.tool = tool
     for (const interaction of this.interactions) this.map.removeInteraction(interaction)
     this.interactions = []
+    this.activeDraw = null
     const add = (interaction: Interaction) => {
       this.interactions.push(interaction)
       this.map.addInteraction(interaction)
+      if (interaction instanceof Draw) this.activeDraw = interaction
     }
     const target = this.map.getTargetElement()
     if (target) target.style.cursor = tool.id === 'select' ? '' : 'crosshair'
@@ -490,7 +509,7 @@ export class MapView {
         translate.on('translateend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(translate)
       } else if (feature && geometry instanceof LineString) {
-        const modify = new Modify({ features: new Collection([feature]) })
+        const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
       }
@@ -498,13 +517,13 @@ export class MapView {
     if (tool.id === 'vertices' && s) {
       const feature = this.editSource.getFeatures()[0] ?? this.features[s.kind].get(s.id)
       if (feature) {
-        const modify = new Modify({ features: new Collection([feature]) })
+        const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
       }
     }
     if (tool.id === 'draw-line') {
-      const draw = new Draw({ type: 'LineString', source: this.measureSource })
+      const draw = new Draw({ type: 'LineString', source: this.measureSource, freehandCondition })
       draw.on('drawend', event => {
         const geometry = fromOl(event.feature.getGeometry()!) as LineGeometry
         setTimeout(() => this.measureSource.clear())
@@ -514,7 +533,7 @@ export class MapView {
       add(draw)
     }
     if (tool.id === 'area-new' || tool.id === 'area-add' || tool.id === 'area-subtract') {
-      const draw = new Draw({ type: 'Polygon', source: this.measureSource })
+      const draw = new Draw({ type: 'Polygon', source: this.measureSource, freehandCondition })
       draw.on('drawend', event => {
         const drawn = (event.feature.getGeometry() as Polygon).getCoordinates() as LonLat[][]
         const polygon = drawn.map(ring => this.smooth(ring, true))
@@ -524,6 +543,15 @@ export class MapView {
       add(draw)
     }
     if (tool.id === 'measure') this.addMeasure(tool.mode, add)
+  }
+
+  /** the touch buttons: finish the drawing, take back the last point, or drop it */
+  drawAction(action: 'finish' | 'undo' | 'abort') {
+    const draw = this.activeDraw
+    if (!draw) return
+    if (action === 'finish') draw.finishDrawing()
+    else if (action === 'undo') draw.removeLastPoint()
+    else draw.abortDrawing()
   }
 
   /** freehand strokes get smoothed; the sampling follows the current zoom (about 2 px) */
@@ -546,7 +574,7 @@ export class MapView {
       type: mode === 'area' ? 'Polygon' : 'LineString',
       source: this.measureSource,
       maxPoints: mode === 'ruler' ? 2 : undefined,
-      freehandCondition: mode === 'ruler' ? () => false : undefined,
+      freehandCondition: mode === 'ruler' ? () => false : freehandCondition,
     })
     let listener: EventsKey | null = null
     draw.on('drawstart', event => {
@@ -634,11 +662,20 @@ export class MapView {
     return out
   }
 
-  /** the map at full extent in a given size, rendered once off-screen for the globe */
-  async renderWorld(width: number): Promise<HTMLCanvasElement> {
+  /**
+   * The map at full extent in a given size, rendered once off-screen for the globe. `only` shows
+   * just these layers, fully opaque (the satellite picture or the relief on their own).
+   */
+  async renderWorld(width: number, only?: LayerId[]): Promise<HTMLCanvasElement> {
     const target = this.map.getTargetElement() as HTMLElement
     const view = this.map.getView()
     const saved = { center: view.getCenter(), resolution: view.getResolution(), width: target.style.width, height: target.style.height }
+    if (only) {
+      for (const [id, layer] of Object.entries(this.layers) as [LayerId, BaseLayer][]) {
+        layer.setVisible(only.includes(id))
+        if (only.includes(id)) layer.setOpacity(1)
+      }
+    }
     const ratio = window.devicePixelRatio || 1
     target.style.width = `${width / ratio}px`
     target.style.height = `${width / 2 / ratio}px`
@@ -647,6 +684,7 @@ export class MapView {
     view.setResolution(360 / (width / ratio))
     await new Promise<void>(resolve => this.map.once('rendercomplete', () => resolve()))
     const canvas = this.snapshot()
+    if (only) this.applyLayers(this.project)
     target.style.width = saved.width
     target.style.height = saved.height
     this.map.updateSize()

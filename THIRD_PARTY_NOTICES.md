@@ -10,6 +10,9 @@
 | [yaml](https://eemeli.org/yaml/) | ISC | Frontmatter der Obsidian-Notes lesen |
 | [Tauri](https://tauri.app/) und Plugins | MIT / Apache-2.0 | Desktop-Rahmen |
 | [image](https://github.com/image-rs/image), [rayon](https://github.com/rayon-rs/rayon), [blake3](https://github.com/BLAKE3-team/BLAKE3) | MIT / Apache-2.0 | Raster lesen, parallel rechnen, Datei-Hashes |
+| [gifenc](https://github.com/mattdesl/gifenc) | MIT | GIF-Animationen des Globus |
+| [webp](https://github.com/jaredforth/webp) mit [libwebp](https://chromium.googlesource.com/webm/libwebp) | MIT / Apache-2.0, libwebp BSD-3-Clause | Kacheln im Archiv als WebP |
+| [zip](https://github.com/zip-rs/zip2) | MIT | `.veilmap`-Archiv |
 
 ## Vorlagen und Werte
 

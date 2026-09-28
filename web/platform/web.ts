@@ -16,6 +16,14 @@ function pick(accept: string): Promise<File | null> {
   })
 }
 
+function download(blob: Blob, path: string) {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = path.replace(/^download:/, '')
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
+}
+
 /** vault root in the web build is "https://127.0.0.1:27124|<api key>" */
 function restApi(root: string) {
   const [base, key] = root.split('|')
@@ -24,6 +32,7 @@ function restApi(root: string) {
 
 export const webPlatform: Platform = {
   kind: 'web',
+  mobile: false,
   async pickFile(_title, filters) {
     const file = await pick(filters.flatMap(f => f.extensions.map(e => `.${e}`)).join(','))
     if (!file) return null
@@ -43,11 +52,7 @@ export const webPlatform: Platform = {
     return file.text()
   },
   async writeText(path, content) {
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
-    link.download = path.replace(/^download:/, '')
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
+    download(new Blob([content], { type: 'application/json' }), path)
   },
   fileExists: async path => files.has(path),
   async fileUrl(path) {
@@ -67,6 +72,18 @@ export const webPlatform: Platform = {
   importRivers: desktopOnly,
   importKoppen: desktopOnly,
   koppenHistogram: desktopOnly,
+  importSatellite: desktopOnly,
+  async openProject(path) {
+    const file = files.get(path)
+    if (!file) throw new Error(`Datei nicht verfügbar: ${path}`)
+    const head = new Uint8Array(await file.slice(0, 2).arrayBuffer())
+    if (head[0] === 0x50 && head[1] === 0x4b) throw new Error('Archive (.veilmap) lassen sich nur in der App öffnen.')
+    return { project: await file.text(), archive: false, unpacked: [] }
+  },
+  saveArchive: desktopOnly,
+  async writeBinary(path, data) {
+    download(new Blob([data as BlobPart]), path)
+  },
   async vaultList(root) {
     const api = restApi(root)
     const walk = async (dir: string): Promise<{ path: string; modified: number }[]> => {

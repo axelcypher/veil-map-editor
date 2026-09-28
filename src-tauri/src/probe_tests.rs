@@ -133,3 +133,97 @@ fn probe_rivers() {
         println!("#{} parent {:?} {:.0} km, upstream {:.0} km, {} points", r.index, r.parent, r.length_km, r.upstream_km, r.coords.len());
     }
 }
+
+/// fractal value noise, seamless east–west, for synthetic test worlds
+fn fractal(width: usize, height: usize, seed: u32) -> Vec<f32> {
+    use rayon::prelude::*;
+    let hash = |x: i64, y: i64, o: u32| -> f32 {
+        let mut h = (x as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (y as u64).wrapping_mul(0xC2B2AE3D27D4EB4F) ^ ((seed ^ o) as u64).wrapping_mul(0x165667B19E3779F9);
+        h ^= h >> 29;
+        h = h.wrapping_mul(0xBF58476D1CE4E5B9);
+        h ^= h >> 32;
+        (h & 0xFFFFFF) as f32 / 0xFFFFFF as f32 * 2.0 - 1.0
+    };
+    let mut out = vec![0f32; width * height];
+    out.par_chunks_mut(width).enumerate().for_each(|(y, row)| {
+        for (x, v) in row.iter_mut().enumerate() {
+            let mut sum = 0.0;
+            let mut amp = 1.0;
+            let mut cells = 4i64;
+            for o in 0..12u32 {
+                let fx = x as f64 / width as f64 * cells as f64;
+                let fy = y as f64 / height as f64 * (cells / 2).max(1) as f64;
+                let (x0, y0) = (fx.floor() as i64, fy.floor() as i64);
+                let (tx, ty) = ((fx - x0 as f64) as f32, (fy - y0 as f64) as f32);
+                let (sx, sy) = (tx * tx * (3.0 - 2.0 * tx), ty * ty * (3.0 - 2.0 * ty));
+                let w = |xx: i64| xx.rem_euclid(cells);
+                let a = hash(w(x0), y0, o);
+                let b = hash(w(x0 + 1), y0, o);
+                let c = hash(w(x0), y0 + 1, o);
+                let d = hash(w(x0 + 1), y0 + 1, o);
+                sum += amp * ((a * (1.0 - sx) + b * sx) * (1.0 - sy) + (c * (1.0 - sx) + d * sx) * sy);
+                amp *= 0.52;
+                cells *= 2;
+            }
+            *v = sum;
+        }
+    });
+    out
+}
+
+#[test]
+#[ignore]
+fn probe_synthesize_world() {
+    let (w, h) = (16384usize, 8192usize);
+    let start = Instant::now();
+    let noise = fractal(w, h, 7);
+    let heights: Vec<u16> = noise.iter().map(|n| heightmap::encode((n * 7000.0 - 1500.0).clamp(-11000.0, 8500.0))).collect();
+    image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_raw(w as u32, h as u32, heights).unwrap().save(out_dir().join("synthetic-height.png")).unwrap();
+    println!("heightmap {:?}", start.elapsed());
+    let texture = fractal(w, h, 99);
+    let mut rgb = vec![0u8; w * h * 3];
+    for i in 0..w * h {
+        let m = noise[i] * 7000.0 - 1500.0;
+        let t = texture[i];
+        let c: [f32; 3] = if m <= 0.0 { [20.0, 50.0 + m.max(-4000.0) / 200.0, 90.0 + m.max(-4000.0) / 100.0] } else if m < 2500.0 { [70.0 + 60.0 * t, 90.0 + 40.0 * t, 50.0 + 30.0 * t] } else { [150.0 + 50.0 * t, 140.0 + 50.0 * t, 130.0 + 50.0 * t] };
+        for k in 0..3 {
+            rgb[i * 3 + k] = c[k].clamp(0.0, 255.0) as u8;
+        }
+    }
+    image::RgbImage::from_raw(w as u32, h as u32, rgb).unwrap().save(out_dir().join("synthetic-satellite.png")).unwrap();
+    println!("satellite {:?}", start.elapsed());
+}
+
+#[test]
+#[ignore]
+fn probe_archive() {
+    use crate::{archive, satellite, tiles::TileEncoding};
+    let out = out_dir();
+    let start = Instant::now();
+    let path = out.join("synthetic-height.png").to_string_lossy().to_string();
+    let options = heightmap::ImportOptions { path: path.clone(), crop_square: false, control_points: vec![] };
+    let (_, _, map) = heightmap::run_checks(&options);
+    let meta = heightmap::build_cache(&map.unwrap(), &options, "synthetic", 6_606_727.0, &out, &|_, _| {}).unwrap();
+    println!("terrain cache {:?}", start.elapsed());
+    let sat = satellite::import(&satellite::SatelliteOptions { path: out.join("synthetic-satellite.png").to_string_lossy().into(), crop_square: false }, &out, &|_, _| {}).unwrap();
+    println!("satellite cache {:?}", start.elapsed());
+    let quality: f32 = std::env::var("VEIL_PROBE_QUALITY").ok().and_then(|q| q.parse().ok()).unwrap_or(85.0);
+    for heights in ["none", "half", "full"] {
+        let target = out.join(format!("probe-q{quality}-{heights}.veilmap"));
+        let report = archive::write(
+            &archive::SaveOptions {
+                project: "{}".into(),
+                terrain_id: Some(meta.id.clone()),
+                koppen_id: None,
+                satellite_id: Some(sat.id.clone()),
+                tiles: TileEncoding { quality, lossless: false },
+                heights: heights.into(),
+            },
+            &out,
+            &target,
+            &|_, _| {},
+        )
+        .unwrap();
+        println!("{:?} q{quality} heights={heights}: {report:?} ({:.1} MB)", start.elapsed(), report.bytes as f64 / 1e6);
+    }
+}

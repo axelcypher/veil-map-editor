@@ -1,9 +1,9 @@
 import { effect } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveFile } from '../model/actions'
+import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
-import { clipVersion, koppen, terrain } from '../model/terrain'
+import { clipVersion, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
 import type { LonLat } from '../model/types'
 import { Inspector } from './Inspector'
@@ -80,6 +80,9 @@ function FileMenu({ onClose }: { onClose: () => void }) {
       <button onClick={() => { onClose(); openFile() }}>Öffnen …</button>
       <button onClick={() => { onClose(); saveFile() }}>Speichern</button>
       <button onClick={() => { onClose(); saveFile(true) }}>Speichern unter …</button>
+      <button onClick={() => { onClose(); saveArchive() }} title="Projekt mit Gelände, Klima und Satellitenbild in einer Datei, z. B. für das Tablet">
+        Als Archiv speichern (.veilmap) …
+      </button>
       {recentFiles.value.length > 0 && <hr />}
       {recentFiles.value.map(path => (
         <button key={path} class="recent" title={path} onClick={() => { onClose(); openFile(path) }}>
@@ -90,7 +93,20 @@ function FileMenu({ onClose }: { onClose: () => void }) {
   )
 }
 
-function Header({ panel, setPanel, show3d }: { panel: Panel; setPanel: (p: Panel) => void; show3d: () => void }) {
+/** touch screens and narrow windows: sidebar and inspector become drawers over the map */
+function useCompact() {
+  const query = '(max-width: 1100px), (pointer: coarse)'
+  const [compact, setCompact] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const change = () => setCompact(media.matches)
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
+  return compact
+}
+
+function Header({ panel, setPanel, show3d }: { panel: Panel | null; setPanel: (p: Panel) => void; show3d: () => void }) {
   const [menu, setMenu] = useState(false)
   return (
     <header class="app-header">
@@ -204,6 +220,7 @@ function useMap(container: { current: HTMLDivElement | null }) {
         view.setLand(t?.land ?? null)
       }),
       effect(() => view.setKoppen(koppen.value, project.value.koppenClasses)),
+      effect(() => view.setSatellite(satellite.value)),
       effect(() => {
         void clipVersion.value
         view.refreshAreas()
@@ -274,6 +291,13 @@ function useShortcuts() {
 export function App() {
   const container = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState<Panel>('data')
+  const compact = useCompact()
+  const [drawer, setDrawer] = useState(false)
+  // in a drawer, the tab of the open panel closes it again
+  const choosePanel = (next: Panel) => {
+    if (compact) setDrawer(!(drawer && next === panel))
+    setPanel(next)
+  }
   const [overview, setOverview] = useState<OverviewId>('states')
   const [show3d, setShow3d] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('veil.sidebar') ?? 420))
@@ -308,9 +332,10 @@ export function App() {
     window.addEventListener('pointerup', up)
   }
   return (
-    <div class="app">
-      <Header panel={panel} setPanel={setPanel} show3d={() => setShow3d(!show3d)} />
+    <div class={`app${compact ? ' compact' : ''}${compact && drawer ? ' drawer-open' : ''}`}>
+      <Header panel={compact && !drawer ? null : panel} setPanel={choosePanel} show3d={() => setShow3d(!show3d)} />
       <div class="workspace">
+        {compact && drawer && <div class="drawer-scrim" onClick={() => setDrawer(false)} />}
         <aside class="sidebar" style={{ width: `${sidebarWidth}px` }}>
           {panel === 'layers' && <LayersPanel />}
           {panel === 'data' && <Overviews active={overview} onChange={setOverview} />}
@@ -328,7 +353,7 @@ export function App() {
           {!terrain.value && (
             <div class="empty-map">
               <p>Noch kein Gelände geladen.</p>
-              <button class="primary" onClick={() => setPanel('project')}>
+              <button class="primary" onClick={() => choosePanel('project')}>
                 Heightmap importieren
               </button>
             </div>

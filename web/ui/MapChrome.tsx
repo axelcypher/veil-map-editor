@@ -2,7 +2,8 @@
 import { signal } from '@preact/signals'
 import { formatKm } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { freehandSmoothing, placeType, project, tool, type MeasureMode } from '../model/store'
+import { deleteVertices, freehand, freehandSmoothing, placeType, project, tool, type MeasureMode } from '../model/store'
+import { mapView } from './mapRef'
 
 export const viewInfo = signal<{ resolution: number; centerLat: number; rotation: number }>({ resolution: 1, centerLat: 0, rotation: 0 })
 export const measurement = signal<{ mode: MeasureMode; text: string; value: number } | null>(null)
@@ -63,7 +64,7 @@ const HINTS: Record<string, string> = {
   'area-add': 'Fläche zeichnen, die dazukommt. Umschalt: freihand.',
   'area-subtract': 'Fläche zeichnen, die wegfällt. Umschalt: freihand.',
   'area-island': 'Auf eine Insel klicken, um sie ganz hinzuzufügen.',
-  vertices: 'Stützpunkte ziehen; auf die Linie ziehen fügt einen ein, Alt+Klick löscht einen.',
+  vertices: 'Stützpunkte ziehen; auf die Linie ziehen fügt einen ein, Alt+Klick (oder „Löschen“ an) entfernt einen.',
   pick: 'Auf die Karte klicken, um den Punkt zu wählen.',
 }
 const MEASURE_HINTS: Record<MeasureMode, string> = {
@@ -95,6 +96,8 @@ export function ToolOptions() {
   if (t.id === 'vertices') title = 'Stützpunkte'
   if (t.id === 'pick') title = 'Punkt wählen'
   const m = measurement.value
+  const drawing = t.id === 'draw-line' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract' || (t.id === 'measure' && t.mode !== 'ruler')
+  const act = (action: 'finish' | 'undo' | 'abort') => mapView.current?.drawAction(action)
   return (
     <div class="tool-options">
       <strong>{title}</strong>
@@ -108,6 +111,27 @@ export function ToolOptions() {
           <input type="range" min={0} max={10} step={0.5} value={freehandSmoothing.value} onInput={e => (freehandSmoothing.value = Number((e.target as HTMLInputElement).value))} />
           <output>{freehandSmoothing.value === 0 ? 'aus' : freehandSmoothing.value}</output>
         </label>
+      )}
+      {drawing && (
+        <span class="touch-buttons">
+          <button class={`small${freehand.value ? ' active' : ''}`} title="Freihand zeichnen, ohne Umschalt zu halten (Touch)" onClick={() => (freehand.value = !freehand.value)}>
+            ✎ Freihand
+          </button>
+          <button class="small" title="Letzten Punkt zurücknehmen" onClick={() => act('undo')}>
+            ↶ Punkt
+          </button>
+          <button class="small" title="Linie bzw. Fläche abschließen (statt Doppelklick)" onClick={() => act('finish')}>
+            ✓ Übernehmen
+          </button>
+          <button class="small" title="Zeichnung verwerfen" onClick={() => act('abort')}>
+            ✕
+          </button>
+        </span>
+      )}
+      {t.id === 'vertices' && (
+        <button class={`small${deleteVertices.value ? ' active' : ''}`} title="Tippen auf einen Stützpunkt löscht ihn (statt Alt+Klick)" onClick={() => (deleteVertices.value = !deleteVertices.value)}>
+          🗑 Löschen
+        </button>
       )}
       <span class="hint">{hint}</span>
       <button class="small" onClick={() => (tool.value = { id: 'select' })}>
