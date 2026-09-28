@@ -97,7 +97,7 @@ Die Release-APK ist unsigniert; zum Installieren mit `apksigner` signieren (eige
 Zwei Workflows unter `.github/workflows/` bauen Windows (MSI und NSIS-Installer) und Android (APK, arm64):
 
 - **Von Hand:** Actions → Workflow wählen → „Run workflow“. Das Ergebnis liegt als Artefakt am Lauf.
-- **Bei Versionserhöhung:** Ein Push auf `main`, der die Version in `package.json` ändert, baut beide und hängt die Dateien an das Release `v<Version>` (wird angelegt, falls es fehlt). `package.json` ist die einzige Stelle für die Version: `tauri.conf.json` liest sie von dort (`"version": "../package.json"`), und daraus leiten sich Installer-Name und Android-`versionCode` ab. Die Version in `Cargo.toml` betrifft nur die Rust-Bibliothek intern.
+- **Bei Versionserhöhung:** Ein Push auf `main` baut beide, wenn es für die Version in `package.json` noch kein Release gibt, und hängt die Dateien an das neue Release `v<Version>`. Ist ein Lauf gescheitert, holt der nächste Push auf `main` das Release nach. `package.json` ist die einzige Stelle für die Version: `tauri.conf.json` liest sie von dort (`"version": "../package.json"`), und daraus leiten sich Installer-Name und Android-`versionCode` ab. Die Version in `Cargo.toml` betrifft nur die Rust-Bibliothek intern.
 
 Die APK wird signiert, wenn diese Repository-Secrets gesetzt sind: `ANDROID_KEYSTORE_BASE64` (die `.jks`-Datei als Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Ohne sie bleibt sie unsigniert.
 
