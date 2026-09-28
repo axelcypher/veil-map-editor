@@ -75,7 +75,11 @@ textarea { resize: vertical; }
 .header-left { display: flex; align-items: stretch; gap: 14px; flex: none; min-width: 0; overflow: hidden; }
 .brand { display: flex; align-items: center; gap: 7px; color: var(--text); flex: none; }
 .brand .logo { width: 26px; height: 30px; background: currentColor; mask: center / contain no-repeat; -webkit-mask: center / contain no-repeat; }
-.brand > span:last-child { font-family: var(--brand-font); font-size: 22px; letter-spacing: 2px; line-height: 1; padding-top: 4px; }
+/* VEIL with EDITOR below it at half size, set flush right: one word mark, centred in the bar */
+/* the font's boxes are taller than its capitals: the shift centres the letters themselves */
+.wordmark { display: inline-flex; flex-direction: column; align-items: flex-end; font-family: var(--brand-font); line-height: 1; transform: translateY(-3.25px); }
+.wordmark-veil { font-size: 22px; letter-spacing: 2px; margin-right: -2px; }
+.wordmark-editor { font-size: 11px; letter-spacing: 1.6px; margin-right: -1.6px; margin-top: 0.5px; }
 /* the panel tabs: plain text, underlined when open */
 .panel-tabs { display: flex; align-items: stretch; gap: 2px; min-width: 0; }
 .panel-tabs button {
