@@ -158,7 +158,10 @@ function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; s
       <div class="header-left" style={tabsWidth ? { width: `${tabsWidth}px` } : undefined} data-tauri-drag-region>
         <div class="brand" data-tauri-drag-region>
           <span class="logo" style={{ maskImage: `url(${logoUrl})`, WebkitMaskImage: `url(${logoUrl})` }} aria-hidden="true" />
-          <span data-tauri-drag-region>VEIL</span>
+          <span class="wordmark" data-tauri-drag-region aria-label="VEIL Editor">
+            <span class="wordmark-veil" data-tauri-drag-region>VEIL</span>
+            <span class="wordmark-editor" data-tauri-drag-region>EDITOR</span>
+          </span>
         </div>
         <nav class="panel-tabs" aria-label="Seitenleiste">
           {PANELS.map(([id, name]) => (
