@@ -21,7 +21,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       release: ${{ steps.check.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: check
@@ -52,8 +52,8 @@ jobs:
     if: needs.version.outputs.release != 'skip'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -71,7 +71,7 @@ jobs:
           cp src-tauri/target/release/bundle/msi/*.msi out/
           cp src-tauri/target/release/bundle/nsis/*.exe out/
           ls -la out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-windows
           path: out/*
@@ -87,7 +87,7 @@ jobs:
       group: release-${{ needs.version.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-windows
           path: out

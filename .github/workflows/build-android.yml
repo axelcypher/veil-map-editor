@@ -26,7 +26,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       release: ${{ steps.check.outputs.release }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: check
@@ -57,19 +57,22 @@ jobs:
     if: needs.version.outputs.release != 'skip'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
+      # the runner image ships the Android SDK; only the NDK version the project builds with is added
       - name: NDK installieren
         run: |
-          sdkmanager "ndk;${NDK_VERSION}"
+          sdkmanager=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "ndk;${NDK_VERSION}" > /dev/null
+          test -d "$ANDROID_HOME/ndk/${NDK_VERSION}"
           echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -103,7 +106,7 @@ jobs:
             --out "out/veil-map-editor-${VERSION}-arm64.apk" "$RUNNER_TEMP/aligned.apk"
           "$build_tools/apksigner" verify "out/veil-map-editor-${VERSION}-arm64.apk"
           rm -f "$RUNNER_TEMP/release.jks" out/*.idsig
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-android
           path: out/*.apk
@@ -119,7 +122,7 @@ jobs:
       group: release-${{ needs.version.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-android
           path: out
