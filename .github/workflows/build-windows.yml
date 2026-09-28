@@ -26,17 +26,12 @@ jobs:
           fetch-depth: 0
       - id: check
         name: Version lesen und mit dem vorigen Stand vergleichen
+        # package.json is the only place the version is set; tauri.conf.json reads it from there
         run: |
-          version=$(jq -r .version src-tauri/tauri.conf.json)
-          npm_version=$(jq -r .version package.json)
-          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
-          if [ "$version" != "$npm_version" ] || [ "$version" != "$cargo_version" ]; then
-            echo "::error::Versionen passen nicht zusammen: tauri.conf.json $version, package.json $npm_version, Cargo.toml $cargo_version"
-            exit 1
-          fi
+          version=$(jq -r .version package.json)
           # the state before the push, so a bump in any of its commits counts
           before="${{ github.event.before }}"
-          previous=$(git show "${before:-HEAD^}:src-tauri/tauri.conf.json" 2>/dev/null | jq -r .version || echo "")
+          previous=$(git show "${before:-HEAD^}:package.json" 2>/dev/null | jq -r .version || echo "")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # a push builds only when the version changed; a manual run always builds, without release
           if [ "${{ github.event_name }}" = "push" ]; then
