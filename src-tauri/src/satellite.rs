@@ -1,6 +1,7 @@
-// The terrain as a picture: a colour render from Gaea (the "satellite image") shown as a map style.
-// Like the heightmap it is read-only and only checked, never adjusted: 2:1, or a square Gaea export
-// cut to its middle on request.
+// Pictures of the whole planet as map layers: the colour render from Gaea (the "satellite image")
+// and any number of own image layers, such as pre-rendered map styles. Like the heightmap they are
+// read-only and only checked, never adjusted: 2:1, or a square export cut to its middle on request.
+// Transparency is kept, so a layer can carry only borders or lettering.
 use crate::raster;
 use crate::tiles::{self, TILE};
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,9 @@ pub struct SatelliteMeta {
     pub tile_size: usize,
     #[serde(default = "png")]
     pub tile_ext: String,
+    /// the tiles carry transparency
+    #[serde(default)]
+    pub alpha: bool,
     pub created_at: u64,
 }
 
@@ -53,14 +57,16 @@ pub fn import(options: &SatelliteOptions, cache_root: &Path, progress: &dyn Fn(&
         }
     }
 
-    // into_rgb8 consumes the decoded picture, so a 16k source is held only once
-    let image = raster::open_image(path)?.into_rgb8();
+    // into_rgb(a)8 consumes the decoded picture, so a 16k source is held only once
+    let image = raster::open_image(path)?;
     let (mut width, mut height) = (image.width() as usize, image.height() as usize);
-    let mut rgb = image.into_raw();
+    let alpha = image.color().has_alpha();
+    let channels = if alpha { 4 } else { 3 };
+    let mut rgb = if alpha { image.into_rgba8().into_raw() } else { image.into_rgb8().into_raw() };
     if options.crop_square && width == height {
         let top = height / 4;
         let rows = height / 2;
-        rgb = rgb[top * width * 3..(top + rows) * width * 3].to_vec();
+        rgb = rgb[top * width * channels..(top + rows) * width * channels].to_vec();
         height = rows;
     }
     raster::check_ratio(width, height)?;
@@ -74,15 +80,15 @@ pub fn import(options: &SatelliteOptions, cache_root: &Path, progress: &dyn Fn(&
     let top_width = 512usize << max_zoom;
     if top_width != width {
         progress("Auf Kachelraster umrechnen", 0.08);
-        rgb = tiles::resample_rgb(&rgb, width, height, top_width, top_width / 2);
+        rgb = tiles::resample(&rgb, width, height, channels, top_width, top_width / 2);
         width = top_width;
         height = top_width / 2;
     }
     for z in (0..=max_zoom).rev() {
         progress("Kacheln schreiben", 0.1 + 0.85 * ((max_zoom - z) as f32 / (max_zoom + 1) as f32));
-        tiles::write_rgb_level(&rgb, width, height, z, &tiles_dir)?;
+        tiles::write_level(&rgb, width, height, channels, z, &tiles_dir)?;
         if z > 0 {
-            rgb = tiles::halve_rgb(&rgb, width, height);
+            rgb = tiles::halve(&rgb, width, height, channels);
             width /= 2;
             height /= 2;
         }
@@ -98,6 +104,7 @@ pub fn import(options: &SatelliteOptions, cache_root: &Path, progress: &dyn Fn(&
         max_zoom,
         tile_size: TILE,
         tile_ext: png(),
+        alpha,
         created_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
     };
     fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;

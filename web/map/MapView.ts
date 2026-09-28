@@ -24,7 +24,8 @@ import TileGrid from 'ol/tilegrid/TileGrid'
 import View from 'ol/View'
 import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
-import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
+import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
+import { isImageLayer } from '../model/catalog'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { deleteVertices, freehand, freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
 import { altKeyOnly, shiftKeyOnly, singleClick } from 'ol/events/condition'
@@ -77,6 +78,9 @@ function fromOl(geometry: Geometry): Entity['geometry'] {
   if (object.type === 'Polygon') return { type: 'MultiPolygon', coordinates: [object.coordinates as LonLat[][]] }
   return object as Entity['geometry']
 }
+
+/** CSS class of a layer's canvas; "img:<id>" becomes "layer-img-<id>" */
+export const layerClass = (id: LayerId) => `layer-${id.replace(':', '-')}`
 
 export const filterCss = (f: Filter | undefined) =>
   !f ? '' : `grayscale(${f.grayscale}) sepia(${f.sepia}) saturate(${f.saturate}) brightness(${f.brightness}) contrast(${f.contrast}) hue-rotate(${f.hue}deg) blur(${f.blur}px) invert(${f.invert})`
@@ -242,6 +246,31 @@ export class MapView {
 
   setSatellite(meta: SatelliteMeta | null) {
     ;(this.layers.satellite as TileLayer<TileImage>).setSource(meta ? tileSource(meta, `satellite/${meta.id}/tiles`) : null)
+  }
+
+  /** own image layers come and go with the project; each is a tile layer like the satellite picture */
+  private imageSources = new Map<ImageLayerId, SatelliteMeta>()
+  setImageLayers(images: Map<string, SatelliteMeta>) {
+    for (const id of Object.keys(this.layers) as LayerId[]) {
+      if (isImageLayer(id) && !images.has(id.slice(4))) {
+        this.map.removeLayer(this.layers[id])
+        delete this.layers[id]
+        this.imageSources.delete(id)
+      }
+    }
+    for (const [cacheId, meta] of images) {
+      const id: ImageLayerId = `img:${cacheId}`
+      if (this.imageSources.get(id) === meta) continue
+      this.imageSources.set(id, meta)
+      const existing = this.layers[id] as TileLayer<TileImage> | undefined
+      if (existing) existing.setSource(tileSource(meta, `satellite/${meta.id}/tiles`))
+      else {
+        const layer = new TileLayer({ className: layerClass(id), source: tileSource(meta, `satellite/${meta.id}/tiles`) })
+        this.layers[id] = layer
+        this.map.addLayer(layer)
+      }
+    }
+    this.applyLayers(this.project)
   }
 
   setLand(land: AreaGeometry | null) {
@@ -441,7 +470,7 @@ export class MapView {
   private applyFilters(display: Display) {
     // the hillshade is white where flat and on the sea, so it darkens whatever lies below
     const rules = [`.ol-layers { filter: ${filterCss(display.mapFilter)}; background: ${display.background}; }`, `.layer-texture { mix-blend-mode: ${display.texture.blend}; }`, `.layer-shade { mix-blend-mode: multiply; }`]
-    for (const [id, filter] of Object.entries(display.layerFilters)) rules.push(`.layer-${id} { filter: ${filterCss(filter)}; }`)
+    for (const [id, filter] of Object.entries(display.layerFilters)) rules.push(`.${layerClass(id as LayerId)} { filter: ${filterCss(filter)}; }`)
     this.styleSheet.textContent = rules.join('\n')
   }
 

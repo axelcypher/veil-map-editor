@@ -49,6 +49,8 @@ export interface SatelliteMeta {
   maxZoom: number
   tileSize: number
   tileExt: string
+  /** the tiles carry transparency */
+  alpha?: boolean
   createdAt: number
 }
 
@@ -147,7 +149,7 @@ export interface Platform {
   openProject(path: string): Promise<OpenedProject>
   saveArchive(
     path: string,
-    content: { project: string; terrainId: string | null; koppenId: string | null; satelliteId: string | null },
+    content: { project: string; terrainId: string | null; koppenId: string | null; satelliteId: string | null; imageIds: string[] },
     options: ArchiveOptions,
   ): Promise<ArchiveReport>
   /** writes binary data the page made (globe images and animations) */

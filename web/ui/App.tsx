@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
-import { clipVersion, koppen, satellite, terrain } from '../model/terrain'
+import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
 import type { LonLat } from '../model/types'
 import { Inspector } from './Inspector'
@@ -221,6 +221,11 @@ function useMap(container: { current: HTMLDivElement | null }) {
       }),
       effect(() => view.setKoppen(koppen.value, project.value.koppenClasses)),
       effect(() => view.setSatellite(satellite.value)),
+      // only the layers the project has (after an undo the tiles may still be loaded)
+      effect(() => {
+        const ids = new Set(project.value.imageLayers.map(l => l.id))
+        view.setImageLayers(new Map([...imageLayerData.value].filter(([id]) => ids.has(id))))
+      }),
       effect(() => {
         void clipVersion.value
         view.refreshAreas()

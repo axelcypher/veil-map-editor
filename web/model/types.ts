@@ -214,12 +214,14 @@ export interface ArchiveOptions {
   heights: 'none' | 'half' | 'full'
   satellite: boolean
   koppen: boolean
+  /** own image layers */
+  images: boolean
 }
 
 /** the globe in the 3D window and its picture and animation exports */
 export interface GlobeOptions {
   /** what the globe wears: the map as shown, or one raster alone */
-  source: 'map' | 'satellite' | 'relief'
+  source: 'map' | 'satellite' | 'relief' | ImageLayerId
   /** degrees per second; the sign is the direction */
   speed: number
   rotate: boolean
@@ -297,9 +299,12 @@ export interface LayerStyle {
   symbolScale: number
 }
 
-export type LayerId =
+export type BuiltinLayerId =
   | 'relief' | 'satellite' | 'shade' | 'coast' | 'koppen' | 'rivers' | 'cultures' | 'religions' | 'states' | 'provinces' | 'zones'
   | 'routes' | 'cities' | 'markers' | 'regiments' | 'labels' | 'graticule' | 'texture'
+/** an own image layer: "img:" and the id of its tile cache */
+export type ImageLayerId = `img:${string}`
+export type LayerId = BuiltinLayerId | ImageLayerId
 
 export interface LayerSetting {
   id: LayerId
@@ -341,8 +346,19 @@ export interface LayerPreset {
 export interface StylePreset {
   id: string
   name: string
-  style: Record<LayerId, LayerStyle>
+  style: Record<BuiltinLayerId, LayerStyle>
   display: Pick<Display, 'background' | 'mapFilter' | 'layerFilters' | 'texture' | 'graticule'>
+}
+
+/** a picture of the whole planet shown as a layer, e.g. a pre-rendered map style */
+export interface ImageLayerRef {
+  /** id of the tile cache; the layer is "img:<id>" */
+  id: string
+  name: string
+  source: string
+  hash: string
+  cropSquare: boolean
+  importedAt: number
 }
 
 export interface Project {
@@ -353,6 +369,7 @@ export interface Project {
   planetRadius: number
   terrain: TerrainRef | null
   satellite: SatelliteRef | null
+  imageLayers: ImageLayerRef[]
   koppen: KoppenRef | null
   riverImport: RiverImportRef | null
   controlPoints: ControlPoint[]
@@ -371,7 +388,7 @@ export interface Project {
   /** "a>b" → relation id, a's view of b */
   diplomacy: Record<string, string>
   catalog: Catalog
-  style: Record<LayerId, LayerStyle>
+  style: Record<BuiltinLayerId, LayerStyle>
   layers: LayerSetting[]
   layerPresets: LayerPreset[]
   stylePresets: StylePreset[]

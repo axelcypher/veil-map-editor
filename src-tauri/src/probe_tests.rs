@@ -216,6 +216,7 @@ fn probe_archive() {
                 terrain_id: Some(meta.id.clone()),
                 koppen_id: None,
                 satellite_id: Some(sat.id.clone()),
+                image_ids: vec![],
                 tiles: TileEncoding { quality, lossless: false },
                 heights: heights.into(),
             },
@@ -226,4 +227,17 @@ fn probe_archive() {
         .unwrap();
         println!("{:?} q{quality} heights={heights}: {report:?} ({:.1} MB)", start.elapsed(), report.bytes as f64 / 1e6);
     }
+}
+
+/// a transparent 2:1 overlay (a grid of red lines) as an image layer, for checking the display
+#[test]
+#[ignore]
+fn probe_image_layer() {
+    let out = out_dir();
+    let source = out.join("overlay.png");
+    image::RgbaImage::from_fn(2048, 1024, |x, y| if x % 128 < 4 || y % 128 < 4 { image::Rgba([230, 40, 40, 255]) } else { image::Rgba([0, 0, 0, 0]) })
+        .save(&source)
+        .unwrap();
+    let meta = crate::satellite::import(&crate::satellite::SatelliteOptions { path: source.to_string_lossy().into(), crop_square: false }, &out, &|_, _| {}).unwrap();
+    println!("{}", serde_json::to_string(&meta).unwrap());
 }
