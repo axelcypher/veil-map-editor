@@ -106,7 +106,7 @@ jobs:
             --out "out/veil-map-editor-${VERSION}-arm64.apk" "$RUNNER_TEMP/aligned.apk"
           "$build_tools/apksigner" verify "out/veil-map-editor-${VERSION}-arm64.apk"
           rm -f "$RUNNER_TEMP/release.jks" out/*.idsig
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-android
           path: out/*.apk
@@ -122,7 +122,7 @@ jobs:
       group: release-${{ needs.version.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-android
           path: out

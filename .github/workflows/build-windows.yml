@@ -71,7 +71,7 @@ jobs:
           cp src-tauri/target/release/bundle/msi/*.msi out/
           cp src-tauri/target/release/bundle/nsis/*.exe out/
           ls -la out
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-windows
           path: out/*
@@ -87,7 +87,7 @@ jobs:
       group: release-${{ needs.version.outputs.version }}
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           name: veil-map-editor-${{ needs.version.outputs.version }}-windows
           path: out
