@@ -216,6 +216,27 @@ export interface ArchiveOptions {
   koppen: boolean
 }
 
+/** the globe in the 3D window and its picture and animation exports */
+export interface GlobeOptions {
+  /** what the globe wears: the map as shown, or one raster alone */
+  source: 'map' | 'satellite' | 'relief'
+  /** degrees per second; the sign is the direction */
+  speed: number
+  rotate: boolean
+  /** axial tilt as seen by the viewer, degrees */
+  tilt: number
+  /** height relief on the surface, 0 = smooth ball */
+  relief: number
+  sun: { on: boolean; azimuth: number; elevation: number; night: number; softness: number }
+  atmosphere: { on: boolean; color: string; strength: number; thickness: number }
+  graticule: { on: boolean; step: number; color: string; opacity: number }
+  clouds: { on: boolean; cover: number; opacity: number; scale: number; seed: number; turns: number }
+  background: { kind: 'transparent' | 'color' | 'stars'; color: string }
+  /** field of view, degrees */
+  fov: number
+  export: { width: number; height: number; frames: number; fps: number }
+}
+
 export interface KoppenRef {
   source: string
   id: string
@@ -357,5 +378,6 @@ export interface Project {
   display: Display
   obsidian: { vaultPath: string; vaultName: string }
   archive: ArchiveOptions
+  globe: GlobeOptions
   view: { center: LonLat; zoom: number }
 }

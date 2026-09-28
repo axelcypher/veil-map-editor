@@ -642,11 +642,20 @@ export class MapView {
     return out
   }
 
-  /** the map at full extent in a given size, rendered once off-screen for the globe */
-  async renderWorld(width: number): Promise<HTMLCanvasElement> {
+  /**
+   * The map at full extent in a given size, rendered once off-screen for the globe. `only` shows
+   * just these layers, fully opaque (the satellite picture or the relief on their own).
+   */
+  async renderWorld(width: number, only?: LayerId[]): Promise<HTMLCanvasElement> {
     const target = this.map.getTargetElement() as HTMLElement
     const view = this.map.getView()
     const saved = { center: view.getCenter(), resolution: view.getResolution(), width: target.style.width, height: target.style.height }
+    if (only) {
+      for (const [id, layer] of Object.entries(this.layers) as [LayerId, BaseLayer][]) {
+        layer.setVisible(only.includes(id))
+        if (only.includes(id)) layer.setOpacity(1)
+      }
+    }
     const ratio = window.devicePixelRatio || 1
     target.style.width = `${width / ratio}px`
     target.style.height = `${width / 2 / ratio}px`
@@ -655,6 +664,7 @@ export class MapView {
     view.setResolution(360 / (width / ratio))
     await new Promise<void>(resolve => this.map.once('rendercomplete', () => resolve()))
     const canvas = this.snapshot()
+    if (only) this.applyLayers(this.project)
     target.style.width = saved.width
     target.style.height = saved.height
     this.map.updateSize()

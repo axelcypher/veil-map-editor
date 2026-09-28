@@ -1,5 +1,7 @@
 // A floating second view of the map: the terrain in 3D, or the planet as a globe carrying the map.
 // The terrain is the imported height grid with the current map view draped over it.
+import type { GlobeOptions } from '../model/types'
+import { GlobeRenderer, type GlobeFrame } from './globe'
 
 export interface TerrainPatch {
   width: number
@@ -16,7 +18,9 @@ export interface TerrainPatch {
 export interface ViewerSource {
   terrain(): TerrainPatch | null
   /** the whole map as an image for the globe */
-  world(): Promise<HTMLCanvasElement>
+  world(source: GlobeOptions['source']): Promise<HTMLCanvasElement>
+  /** slopes of the terrain for relief on the globe */
+  slope(): { data: Uint8Array; width: number; height: number } | null
 }
 
 type Matrix = Float32Array
@@ -115,59 +119,26 @@ void main() {
   outColor = vec4(v_color * lit, 1.0);
 }`
 
-const GLOBE_VERTEX = `#version 300 es
-precision highp float;
-in vec3 a_position;
-uniform mat4 u_mvp;
-uniform mat4 u_model;
-out vec3 v_normal;
-out vec3 v_local;
-void main() {
-  v_local = a_position;
-  v_normal = mat3(u_model) * a_position;
-  gl_Position = u_mvp * vec4(a_position, 1.0);
-}`
-
-const GLOBE_FRAGMENT = `#version 300 es
-precision highp float;
-in vec3 v_normal;
-in vec3 v_local;
-uniform sampler2D u_map;
-uniform vec4 u_extent;
-uniform float u_global;
-uniform vec3 u_eye;
-out vec4 outColor;
-const float PI = 3.14159265;
-void main() {
-  vec3 n = normalize(v_local);
-  float lon = atan(n.x, n.z);
-  float lat = asin(clamp(n.y, -1.0, 1.0));
-  vec2 uv;
-  if (u_global > 0.5) uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
-  else uv = vec2((degrees(lon) - u_extent.x) / (u_extent.y - u_extent.x), (u_extent.z - degrees(lat)) / (u_extent.z - u_extent.w));
-  vec3 base = vec3(0.16, 0.22, 0.29);
-  vec3 color = (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) ? texture(u_map, uv).rgb : base;
-  vec3 world = normalize(v_normal);
-  float lit = 0.32 + 0.8 * max(dot(world, normalize(vec3(-0.4, 0.5, 0.75))), 0.0);
-  float rim = pow(1.0 - max(dot(world, normalize(u_eye)), 0.0), 3.0);
-  outColor = vec4(color * lit + vec3(0.25, 0.5, 0.9) * rim * 0.7, 1.0);
-}`
-
 export class Viewer {
   private readonly canvas: HTMLCanvasElement
   private readonly source: ViewerSource
   private readonly gl: WebGL2RenderingContext
   private readonly terrain: WebGLProgram
-  private readonly globe: WebGLProgram
+  private readonly globe: GlobeRenderer
   private readonly heightTexture: WebGLTexture
   private readonly colorTexture: WebGLTexture
-  private readonly mapTexture: WebGLTexture
   private readonly emptyArray: WebGLVertexArrayObject
-  private readonly sphere: { array: WebGLVertexArrayObject; count: number }
   private grid = { width: 0, height: 0, worldWidth: 1, worldHeight: 1 }
-  private globeExtent = { west: -180, east: 180, north: 90, south: -90, global: true }
   private frame = 0
+  private animation = 0
+  private lastTime = 0
   mode: 'terrain' | 'globe' = 'terrain'
+  globeOptions: GlobeOptions
+  /** the picture on the globe, kept for the exports */
+  world: HTMLCanvasElement | null = null
+  slope: { data: Uint8Array; width: number; height: number } | null = null
+  private zoom = 1
+  private cloudAngle = 0
   exaggeration = 12
   private yaw = 0.5
   private pitch = 0.75
@@ -177,14 +148,15 @@ export class Viewer {
   private seaM = 0
   private worldSize = 1
 
-  constructor(canvas: HTMLCanvasElement, source: ViewerSource) {
+  constructor(canvas: HTMLCanvasElement, source: ViewerSource, globeOptions: GlobeOptions) {
     this.canvas = canvas
     this.source = source
+    this.globeOptions = globeOptions
     const gl = canvas.getContext('webgl2', { antialias: true })
     if (!gl) throw new Error('WebGL 2 wird nicht unterstützt.')
     this.gl = gl
     this.terrain = program(gl, TERRAIN_VERTEX, TERRAIN_FRAGMENT)
-    this.globe = program(gl, GLOBE_VERTEX, GLOBE_FRAGMENT)
+    this.globe = new GlobeRenderer(gl)
     const texture = () => {
       const created = gl.createTexture()!
       gl.bindTexture(gl.TEXTURE_2D, created)
@@ -196,34 +168,7 @@ export class Viewer {
     }
     this.heightTexture = texture()
     this.colorTexture = texture()
-    this.mapTexture = texture()
-    gl.bindTexture(gl.TEXTURE_2D, this.mapTexture)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     this.emptyArray = gl.createVertexArray()!
-
-    // a sphere as latitude rings; longitude 0 faces +z
-    const rings = 48
-    const segments = 96
-    const positions: number[] = []
-    for (let ring = 0; ring < rings; ring += 1) {
-      for (let segment = 0; segment < segments; segment += 1) {
-        const corners: [number, number][] = [[ring, segment], [ring + 1, segment], [ring, segment + 1], [ring, segment + 1], [ring + 1, segment], [ring + 1, segment + 1]]
-        for (const [r, s] of corners) {
-          const lat = Math.PI / 2 - r / rings * Math.PI
-          const lon = s / segments * 2 * Math.PI - Math.PI
-          positions.push(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon))
-        }
-      }
-    }
-    const array = gl.createVertexArray()!
-    gl.bindVertexArray(array)
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW)
-    const location = gl.getAttribLocation(this.globe, 'a_position')
-    gl.enableVertexAttribArray(location)
-    gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0)
-    this.sphere = { array, count: positions.length / 3 }
 
     let dragging: { x: number; y: number; pan: boolean } | null = null
     canvas.addEventListener('pointerdown', event => {
@@ -250,7 +195,8 @@ export class Viewer {
     canvas.addEventListener('pointercancel', stop)
     canvas.addEventListener('wheel', event => {
       event.preventDefault()
-      this.distance = Math.min(6, Math.max(this.mode === 'globe' ? 1.25 : 0.15, this.distance * Math.exp(event.deltaY * 0.0012)))
+      if (this.mode === 'globe') this.zoom = Math.min(12, Math.max(0.4, this.zoom * Math.exp(-event.deltaY * 0.0012)))
+      else this.distance = Math.min(6, Math.max(0.15, this.distance * Math.exp(event.deltaY * 0.0012)))
       this.draw()
     }, { passive: false })
     canvas.addEventListener('contextmenu', event => event.preventDefault())
@@ -258,9 +204,47 @@ export class Viewer {
 
   setMode(mode: 'terrain' | 'globe') {
     this.mode = mode
-    this.distance = mode === 'globe' ? 3 : 1.3
+    this.distance = 1.3
+    this.zoom = 1
     this.pitch = mode === 'globe' ? 0.35 : 0.75
     this.update().catch(error => console.error(error))
+    this.animate()
+  }
+
+  /** new globe settings; the picture is read again only when its source changed */
+  setGlobeOptions(options: GlobeOptions) {
+    const sourceChanged = options.source !== this.globeOptions.source
+    this.globeOptions = options
+    if (this.mode === 'globe' && sourceChanged) this.update().catch(error => console.error(error))
+    this.animate()
+    this.draw()
+  }
+
+  /** the view the globe is seen from, for the exports */
+  globeFrame(): GlobeFrame {
+    return { spin: this.yaw, pitch: this.pitch, zoom: this.zoom, cloudAngle: this.cloudAngle }
+  }
+
+  /** turns the globe while it is shown and rotation is on */
+  private animate() {
+    cancelAnimationFrame(this.animation)
+    if (this.mode !== 'globe' || !this.globeOptions.rotate || !this.globeOptions.speed) return
+    this.lastTime = performance.now()
+    const tick = (time: number) => {
+      const dt = Math.min(0.1, (time - this.lastTime) / 1000)
+      this.lastTime = time
+      const turn = (this.globeOptions.speed * Math.PI) / 180 * dt
+      this.yaw -= turn
+      this.cloudAngle += turn * this.globeOptions.clouds.turns
+      this.render()
+      this.animation = requestAnimationFrame(tick)
+    }
+    this.animation = requestAnimationFrame(tick)
+  }
+
+  dispose() {
+    cancelAnimationFrame(this.animation)
+    cancelAnimationFrame(this.frame)
   }
 
   /** turn the globe so the given point faces the viewer */
@@ -285,11 +269,10 @@ export class Viewer {
       this.unitsPerMeter = 1 / 1000
       this.worldSize = Math.max(patch.widthKm, patch.heightKm)
     } else {
-      const image = await this.source.world()
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
-      gl.bindTexture(gl.TEXTURE_2D, this.mapTexture)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, image)
-      this.globeExtent = { west: -180, east: 180, north: 90, south: -90, global: true }
+      this.world = await this.source.world(this.globeOptions.source)
+      this.slope = this.source.slope()
+      this.globe.setMap(this.world)
+      this.globe.setSlope(this.slope)
     }
     this.draw()
   }
@@ -341,20 +324,6 @@ export class Viewer {
       return
     }
 
-    const radius = this.distance
-    const eye = [Math.sin(this.yaw) * Math.cos(this.pitch) * radius, Math.sin(this.pitch) * radius, Math.cos(this.yaw) * Math.cos(this.pitch) * radius]
-    const model = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
-    const mvp = multiply(perspective(0.7, aspect, 0.05, 20), lookAt(eye, [0, 0, 0], [0, 1, 0]))
-    gl.useProgram(this.globe)
-    gl.bindVertexArray(this.sphere.array)
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.mapTexture)
-    gl.uniform1i(gl.getUniformLocation(this.globe, 'u_map'), 0)
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.globe, 'u_mvp'), false, mvp)
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.globe, 'u_model'), false, model)
-    gl.uniform4f(gl.getUniformLocation(this.globe, 'u_extent'), this.globeExtent.west, this.globeExtent.east, this.globeExtent.north, this.globeExtent.south)
-    gl.uniform1f(gl.getUniformLocation(this.globe, 'u_global'), this.globeExtent.global ? 1 : 0)
-    gl.uniform3f(gl.getUniformLocation(this.globe, 'u_eye'), eye[0], eye[1], eye[2])
-    gl.drawArrays(gl.TRIANGLES, 0, this.sphere.count)
+    this.globe.render(this.globeOptions, this.globeFrame(), canvas.width, canvas.height)
   }
 }
