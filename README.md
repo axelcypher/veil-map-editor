@@ -82,6 +82,20 @@ npm run tauri android build -- --apk --target aarch64
 
 Die Release-APK ist unsigniert; zum Installieren mit `apksigner` signieren (eigener Schlüssel) oder `npm run tauri android dev` mit angeschlossenem Gerät nutzen.
 
+## Builds auf GitHub
+
+Zwei Workflows unter `.github/workflows/` bauen Windows (MSI und NSIS-Installer) und Android (APK, arm64):
+
+- **Von Hand:** Actions → Workflow wählen → „Run workflow“. Das Ergebnis liegt als Artefakt am Lauf.
+- **Bei Versionserhöhung:** Ein Push auf `main`, der die Version in `src-tauri/tauri.conf.json` ändert, baut beide und hängt die Dateien an das Release `v<Version>` (wird angelegt, falls es fehlt). `package.json`, `tauri.conf.json` und `Cargo.toml` müssen dieselbe Version tragen, sonst bricht der Lauf ab.
+
+Die APK wird signiert, wenn diese Repository-Secrets gesetzt sind: `ANDROID_KEYSTORE_BASE64` (die `.jks`-Datei als Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Ohne sie bleibt sie unsigniert.
+
+```bash
+keytool -genkeypair -keystore veil-release.jks -alias veil -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 veil-release.jks   # Inhalt als ANDROID_KEYSTORE_BASE64
+```
+
 ## Windows-Build
 
 ```powershell

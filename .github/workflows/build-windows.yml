@@ -1,0 +1,101 @@
+# Windows installers (MSI and NSIS). Runs by hand, or when a push to main raises the version.
+name: Windows-Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Version prüfen
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        name: Version lesen und mit dem vorigen Stand vergleichen
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          npm_version=$(jq -r .version package.json)
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          if [ "$version" != "$npm_version" ] || [ "$version" != "$cargo_version" ]; then
+            echo "::error::Versionen passen nicht zusammen: tauri.conf.json $version, package.json $npm_version, Cargo.toml $cargo_version"
+            exit 1
+          fi
+          # the state before the push, so a bump in any of its commits counts
+          before="${{ github.event.before }}"
+          previous=$(git show "${before:-HEAD^}:src-tauri/tauri.conf.json" 2>/dev/null | jq -r .version || echo "")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # a push builds only when the version changed; a manual run always builds, without release
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "$version" = "$previous" ]; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
+          else
+            echo "release=no" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Version $version (vorher: ${previous:-unbekannt}), Ereignis ${{ github.event_name }}"
+
+  build:
+    name: Windows bauen
+    needs: version
+    if: needs.version.outputs.release != 'skip'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Tauri-Build
+        run: npx tauri build
+      - name: Installer einsammeln
+        shell: bash
+        run: |
+          mkdir -p out
+          cp src-tauri/target/release/bundle/msi/*.msi out/
+          cp src-tauri/target/release/bundle/nsis/*.exe out/
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veil-map-editor-${{ needs.version.outputs.version }}-windows
+          path: out/*
+
+  release:
+    name: An das Release hängen
+    needs: [version, build]
+    if: needs.version.outputs.release == 'yes'
+    runs-on: ubuntu-latest
+    # the Windows and the Android workflow attach to the same release; one at a time, so it is
+    # created only once
+    concurrency:
+      group: release-${{ needs.version.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: veil-map-editor-${{ needs.version.outputs.version }}-windows
+          path: out
+      - name: Release anlegen und Dateien hochladen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Veil Map Editor $TAG" --generate-notes
+          gh release upload "$TAG" out/* --clobber

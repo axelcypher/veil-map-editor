@@ -1,0 +1,133 @@
+# Android APK (arm64). Runs by hand, or when a push to main raises the version.
+# Signing: set the secrets ANDROID_KEYSTORE_BASE64 (the .jks as base64), ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. Without them the APK stays unsigned.
+name: Android-Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - src-tauri/tauri.conf.json
+      - src-tauri/Cargo.toml
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 28.2.13676358
+
+jobs:
+  version:
+    name: Version prüfen
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        name: Version lesen und mit dem vorigen Stand vergleichen
+        run: |
+          version=$(jq -r .version src-tauri/tauri.conf.json)
+          npm_version=$(jq -r .version package.json)
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          if [ "$version" != "$npm_version" ] || [ "$version" != "$cargo_version" ]; then
+            echo "::error::Versionen passen nicht zusammen: tauri.conf.json $version, package.json $npm_version, Cargo.toml $cargo_version"
+            exit 1
+          fi
+          # the state before the push, so a bump in any of its commits counts
+          before="${{ github.event.before }}"
+          previous=$(git show "${before:-HEAD^}:src-tauri/tauri.conf.json" 2>/dev/null | jq -r .version || echo "")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # a push builds only when the version changed; a manual run always builds, without release
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "$version" = "$previous" ]; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
+          else
+            echo "release=no" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Version $version (vorher: ${previous:-unbekannt}), Ereignis ${{ github.event_name }}"
+
+  build:
+    name: Android bauen
+    needs: version
+    if: needs.version.outputs.release != 'skip'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: NDK installieren
+        run: |
+          sdkmanager "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Tauri-Build (APK, arm64)
+        run: npx tauri android build --apk --target aarch64
+      - name: Signieren
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p out
+          unsigned=$(find src-tauri/gen/android/app/build/outputs/apk -name '*-unsigned.apk' | head -1)
+          if [ -z "$KEYSTORE" ]; then
+            echo "::warning::Kein Signaturschlüssel hinterlegt – die APK bleibt unsigniert und lässt sich so nicht installieren."
+            cp "$unsigned" "out/veil-map-editor-${VERSION}-arm64-unsigned.apk"
+            exit 0
+          fi
+          build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          "$build_tools/zipalign" -f -p 4 "$unsigned" "$RUNNER_TEMP/aligned.apk"
+          "$build_tools/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass env:STORE_PASS \
+            --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASS \
+            --out "out/veil-map-editor-${VERSION}-arm64.apk" "$RUNNER_TEMP/aligned.apk"
+          "$build_tools/apksigner" verify "out/veil-map-editor-${VERSION}-arm64.apk"
+          rm -f "$RUNNER_TEMP/release.jks" out/*.idsig
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veil-map-editor-${{ needs.version.outputs.version }}-android
+          path: out/*.apk
+
+  release:
+    name: An das Release hängen
+    needs: [version, build]
+    if: needs.version.outputs.release == 'yes'
+    runs-on: ubuntu-latest
+    # the Windows and the Android workflow attach to the same release; one at a time, so it is
+    # created only once
+    concurrency:
+      group: release-${{ needs.version.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: veil-map-editor-${{ needs.version.outputs.version }}-android
+          path: out
+      - name: Release anlegen und Dateien hochladen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Veil Map Editor $TAG" --generate-notes
+          gh release upload "$TAG" out/* --clobber
