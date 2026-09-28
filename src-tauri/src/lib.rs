@@ -20,6 +20,24 @@ use tauri::{Emitter, Manager, State};
 use tauri_plugin_fs::{FilePath, FsExt};
 use tauri_plugin_opener::OpenerExt;
 
+/// whether this build can update itself: only builds made with the update key's public half
+/// (the release workflow) can check a download's signature
+fn updater_configured(config: &tauri::Config) -> bool {
+    cfg!(desktop)
+        && config
+            .plugins
+            .0
+            .get("updater")
+            .and_then(|u| u.get("pubkey"))
+            .and_then(|k| k.as_str())
+            .is_some_and(|k| !k.trim().is_empty())
+}
+
+#[tauri::command]
+fn updater_ready(app: tauri::AppHandle) -> bool {
+    updater_configured(app.config())
+}
+
 struct AppState {
     cache_root: PathBuf,
     terrain: Mutex<Option<Arc<Heightmap>>>,
@@ -335,6 +353,13 @@ pub fn run() {
             let cache_root = if cfg!(mobile) { app.path().app_local_data_dir()?.join("cache") } else { app.path().app_cache_dir()? };
             std::fs::create_dir_all(&cache_root)?;
             app.manage(AppState { cache_root, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
+            #[cfg(desktop)]
+            {
+                app.handle().plugin(tauri_plugin_process::init())?;
+                if updater_configured(app.config()) {
+                    app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+                }
+            }
             if cfg!(debug_assertions) {
                 app.handle().plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())?;
             }
@@ -359,6 +384,7 @@ pub fn run() {
             file_exists,
             register_file,
             open_external,
+            updater_ready,
             open_file
         ])
         .run(tauri::generate_context!())

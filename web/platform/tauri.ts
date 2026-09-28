@@ -23,7 +23,34 @@ function treeToPath(uri: string) {
 
 const appWindow = () => getCurrentWindow()
 
+const updater: Platform['updater'] = mobile
+  ? undefined
+  : {
+      ready: () => invoke<boolean>('updater_ready'),
+      async install(onProgress) {
+        // loaded on demand: the plugin exists only in desktop builds
+        const { check } = await import('@tauri-apps/plugin-updater')
+        const update = await check()
+        if (!update) return false
+        let total = 0
+        let done = 0
+        await update.downloadAndInstall(event => {
+          if (event.event === 'Started') total = event.data.contentLength ?? 0
+          else if (event.event === 'Progress') {
+            done += event.data.chunkLength
+            onProgress(total ? done / total : null)
+          }
+        })
+        return true
+      },
+      async relaunch() {
+        const { relaunch } = await import('@tauri-apps/plugin-process')
+        await relaunch()
+      },
+    }
+
 export const tauriPlatform: Platform = {
+  updater,
   window: mobile
     ? undefined
     : {

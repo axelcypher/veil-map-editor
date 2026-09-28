@@ -97,7 +97,7 @@ Die Release-APK ist unsigniert; zum Installieren mit `apksigner` signieren (eige
 Zwei Workflows unter `.github/workflows/` bauen Windows (MSI und NSIS-Installer) und Android (APK, arm64):
 
 - **Von Hand:** Actions → Workflow wählen → „Run workflow“. Das Ergebnis liegt als Artefakt am Lauf.
-- **Bei Versionserhöhung:** Ein Push auf `main` baut beide, wenn es für die Version in `package.json` noch kein Release gibt, und hängt die Dateien an das neue Release `v<Version>`. Ist ein Lauf gescheitert, holt der nächste Push auf `main` das Release nach. `package.json` ist die einzige Stelle für die Version: `tauri.conf.json` liest sie von dort (`"version": "../package.json"`), und daraus leiten sich Installer-Name und Android-`versionCode` ab. Die Version in `Cargo.toml` betrifft nur die Rust-Bibliothek intern.
+- **Bei Versionserhöhung:** Ein Push auf `main` baut, solange dem Release `v<Version>` (Version aus `package.json`) die jeweilige Datei fehlt – dem Windows-Workflow das MSI, dem Android-Workflow die APK –, und hängt sie daran; das Release wird bei Bedarf angelegt. Ist ein Lauf gescheitert, holt der nächste Push auf `main` ihn nach. `package.json` ist die einzige Stelle für die Version: `tauri.conf.json` liest sie von dort (`"version": "../package.json"`), und daraus leiten sich Installer-Name und Android-`versionCode` ab. Die Version in `Cargo.toml` betrifft nur die Rust-Bibliothek intern.
 
 Die APK wird signiert, wenn diese Repository-Secrets gesetzt sind: `ANDROID_KEYSTORE_BASE64` (die `.jks`-Datei als Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Ohne sie bleibt sie unsigniert.
 
@@ -105,6 +105,30 @@ Die APK wird signiert, wenn diese Repository-Secrets gesetzt sind: `ANDROID_KEYS
 keytool -genkeypair -keystore veil-release.jks -alias veil -keyalg RSA -keysize 4096 -validity 10000
 base64 -w0 veil-release.jks   # Inhalt als ANDROID_KEYSTORE_BASE64
 ```
+
+## Updates in der App
+
+Beim Start sieht die App höchstens einmal am Tag im neuesten GitHub-Release nach (abschaltbar unter „Datei“), von Hand über „Datei → Nach Updates suchen“. Ist eine neuere Version da, erscheint unten rechts ein Update-Knopf.
+
+- **Windows:** Die App lädt den Installer, prüft seine Signatur, installiert und startet neu (Tauri-Updater, `latest.json` im Release).
+- **Android:** Die App lädt die APK über den Browser; Android installiert sie über die alte, weil beide mit demselben Schlüssel signiert sind.
+- **Ohne Update-Schlüssel** (lokale Builds, Web) öffnet der Knopf die Release-Seite.
+
+Der Update-Schlüssel ist ein eigenes Schlüsselpaar, getrennt vom Android-Schlüssel. Einmal erzeugen:
+
+```bash
+npx tauri signer generate -w veil-updater.key
+```
+
+Dann im Repository unter Settings → Secrets and variables → Actions anlegen:
+
+| Art | Name | Inhalt |
+| --- | --- | --- |
+| Secret | `TAURI_SIGNING_PRIVATE_KEY` | Inhalt von `veil-updater.key` |
+| Secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | das Passwort (leer lassen, wenn keins) |
+| Variable | `TAURI_UPDATER_PUBKEY` | Inhalt von `veil-updater.key.pub` |
+
+Der Windows-Workflow signiert damit die Installer und legt `latest.json` ins Release. Installierte Versionen, die schon mit dem öffentlichen Schlüssel gebaut wurden, finden Updates von selbst; die erste solche Version muss einmal von Hand installiert werden. Den privaten Schlüssel gut aufheben: Ohne ihn kann keine installierte Version mehr ein Update annehmen.
 
 ## Windows-Build
 

@@ -1,4 +1,5 @@
 // Coordinates, height and climate under the cursor; the point info panel lists everything there.
+import { applyUpdate, availableUpdate } from '../model/update'
 import { signal } from '@preact/signals'
 import { useEffect, useState } from 'preact/hooks'
 import { membershipAt } from '../model/derive'
@@ -96,6 +97,11 @@ export function StatusBar() {
         {filePath.value ? filePath.value.split(/[\\/]/).pop() : 'nicht gespeichert'}
         {dirty.value ? ' •' : ''}
       </span>
+      {availableUpdate.value && (
+        <button class="small update" onClick={() => applyUpdate()} title={availableUpdate.value.notes || 'Neue Version auf GitHub'}>
+          ⬆ Update {availableUpdate.value.version}
+        </button>
+      )}
       <span class="version" title={`Build ${__BUILD_TIME__}`}>
         v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
       </span>

@@ -33,10 +33,11 @@ jobs:
         run: |
           version=$(jq -r .version package.json)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # a push builds when this version has no release yet, so a failed run is made up for by
-          # the next push; a manual run always builds, without a release
+          # a push builds while the release for this version lacks the APK, so a failed run is made
+          # up for by the next push; a manual run always builds, without a release
           if [ "${{ github.event_name }}" = "push" ]; then
-            if gh release view "v$version" > /dev/null 2>&1; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
+            assets=$(gh release view "v$version" --json assets --jq '.assets[].name' 2>/dev/null || true)
+            if echo "$assets" | grep -q '\.apk$'; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
           else
             echo "release=no" >> "$GITHUB_OUTPUT"
           fi

@@ -28,10 +28,11 @@ jobs:
         run: |
           version=$(jq -r .version package.json)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # a push builds when this version has no release yet, so a failed run is made up for by
-          # the next push; a manual run always builds, without a release
+          # a push builds while the release for this version lacks the installer, so a failed run
+          # is made up for by the next push; a manual run always builds, without a release
           if [ "${{ github.event_name }}" = "push" ]; then
-            if gh release view "v$version" > /dev/null 2>&1; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
+            assets=$(gh release view "v$version" --json assets --jq '.assets[].name' 2>/dev/null || true)
+            if echo "$assets" | grep -q '\.msi$'; then echo "release=skip" >> "$GITHUB_OUTPUT"; else echo "release=yes" >> "$GITHUB_OUTPUT"; fi
           else
             echo "release=no" >> "$GITHUB_OUTPUT"
           fi
@@ -53,14 +54,53 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
+      # With the update key (secrets TAURI_SIGNING_PRIVATE_KEY and _PASSWORD, variable
+      # TAURI_UPDATER_PUBKEY) the build signs its installers and the app can update itself.
       - name: Tauri-Build
-        run: npx tauri build
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$UPDATER_PUBKEY" ]; then
+            jq -n --arg key "$UPDATER_PUBKEY" --arg url "https://github.com/$REPO/releases/latest/download/latest.json" \
+              '{bundle: {createUpdaterArtifacts: true}, plugins: {updater: {pubkey: $key, endpoints: [$url], windows: {installMode: "passive"}}}}' > updater.json
+            npx tauri build --config updater.json
+          else
+            echo "::warning::Kein Update-Schlüssel hinterlegt – dieser Build kann sich nicht selbst aktualisieren und verweist auf die Release-Seite."
+            npx tauri build
+          fi
       - name: Installer einsammeln
         shell: bash
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p out
-          cp src-tauri/target/release/bundle/msi/*.msi out/
-          cp src-tauri/target/release/bundle/nsis/*.exe out/
+          bundle=src-tauri/target/release/bundle
+          # GitHub turns spaces in asset names into dots; do it here so latest.json names them right
+          for f in "$bundle"/msi/*.msi "$bundle"/nsis/*.exe; do
+            name=$(basename "$f")
+            cp "$f" "out/${name// /.}"
+          done
+          # the update manifest the app asks for; only signed builds have the .sig files
+          nsis_sig=$(ls "$bundle"/nsis/*.exe.sig 2>/dev/null | head -1)
+          msi_sig=$(ls "$bundle"/msi/*.msi.sig 2>/dev/null | head -1)
+          if [ -n "$nsis_sig" ] && [ -n "$msi_sig" ]; then
+            base="https://github.com/$REPO/releases/download/v$VERSION"
+            nsis=$(basename "${nsis_sig%.sig}"); nsis="${nsis// /.}"
+            msi=$(basename "${msi_sig%.sig}"); msi="${msi// /.}"
+            jq -n --arg version "$VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg nsis_url "$base/$nsis" --rawfile nsis_sig "$nsis_sig" \
+              --arg msi_url "$base/$msi" --rawfile msi_sig "$msi_sig" \
+              --arg notes "https://github.com/$REPO/releases/tag/v$VERSION" \
+              '{version: $version, notes: $notes, pub_date: $date, platforms: {
+                 "windows-x86_64": {signature: $nsis_sig, url: $nsis_url},
+                 "windows-x86_64-nsis": {signature: $nsis_sig, url: $nsis_url},
+                 "windows-x86_64-msi": {signature: $msi_sig, url: $msi_url}}}' > out/latest.json
+          fi
           ls -la out
       - uses: actions/upload-artifact@v6
         with:

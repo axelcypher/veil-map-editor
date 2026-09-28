@@ -31,5 +31,10 @@ tauri-plugin-fs = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 percent-encoding = "2"
 
+# the in-app update (download, verify, install, restart) only exists on the desktop
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
 [profile.dev.package."*"]
 opt-level = 3

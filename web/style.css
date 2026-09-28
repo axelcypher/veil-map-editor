@@ -368,3 +368,5 @@ tr.selected { background: var(--accent-soft) !important; }
 .image-layers { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .image-layers li { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
 .image-layers .muted { font-size: 11.5px; white-space: nowrap; }
+
+.status-bar button.update { background: var(--accent); border-color: var(--accent-strong); color: var(--on-accent); }

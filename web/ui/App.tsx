@@ -2,6 +2,7 @@ import { effect } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
+import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
 import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
@@ -84,6 +85,11 @@ function FileMenu({ onClose }: { onClose: () => void }) {
       <button onClick={() => { onClose(); saveFile(true) }}>Speichern unter …</button>
       <button onClick={() => { onClose(); saveArchive() }} title="Projekt mit Gelände, Klima und Satellitenbild in einer Datei, z. B. für das Tablet">
         Als Archiv speichern (.veilmap) …
+      </button>
+      <hr />
+      <button onClick={() => { onClose(); checkForUpdate(true) }}>Nach Updates suchen …</button>
+      <button onClick={() => (autoCheck.value = !autoCheck.value)} title="Beim Start höchstens einmal am Tag auf GitHub nachsehen">
+        {autoCheck.value ? '✓' : '\u2003'} Automatisch nach Updates suchen
       </button>
       {recentFiles.value.length > 0 && <hr />}
       {recentFiles.value.map(path => (
@@ -365,6 +371,7 @@ export function App() {
   useShortcuts()
   useEffect(() => {
     refreshVault(project.value)
+    checkAtStartup()
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.value) event.preventDefault()
     }

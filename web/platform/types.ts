@@ -162,6 +162,16 @@ export interface Platform {
 
   /** the app's own title bar replaces the system one on the desktop; absent elsewhere */
   window?: WindowControls
+  /** in-app update from the GitHub release (desktop builds made with the update key) */
+  updater?: Updater
+}
+
+export interface Updater {
+  /** false in builds without the update key; those point to the release page instead */
+  ready(): Promise<boolean>
+  /** downloads, checks the signature and installs; resolves false when there was nothing newer */
+  install(onProgress: (fraction: number | null) => void): Promise<boolean>
+  relaunch(): Promise<void>
 }
 
 export interface WindowControls {
