@@ -306,3 +306,27 @@ tr.selected { background: #e0a84a2e !important; }
 .smoothing { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .smoothing input { width: 90px; }
 .smoothing output { width: 24px; color: var(--accent-2); }
+
+/* touch screens and narrow windows: sidebar and inspector as drawers over the map */
+.app.compact .sidebar {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 40; max-width: calc(100vw - 56px);
+  box-shadow: 8px 0 24px #0008; transform: translateX(-105%); transition: transform 0.18s ease-out;
+}
+.app.compact.drawer-open .sidebar { transform: none; }
+.app.compact .sidebar-resize { display: none; }
+.app.compact .inspector { position: absolute; top: 0; bottom: 0; right: 0; z-index: 41; max-width: calc(100vw - 56px); box-shadow: -8px 0 24px #0008; }
+.drawer-scrim { position: absolute; inset: 0; z-index: 39; background: #0006; }
+.app.compact .view3d { left: 0 !important; top: 0 !important; width: 100vw; height: 100%; border-radius: 0; resize: none; }
+.app.compact .app-header { flex-wrap: wrap; row-gap: 4px; }
+@media (max-width: 760px) {
+  .app.compact .view3d-body { flex-direction: column; }
+  .app.compact .globe-settings { width: auto; height: 45%; border-left: none; border-top: 1px solid var(--line); }
+}
+@media (pointer: coarse) {
+  button { min-height: 36px; }
+  .toolbar button { width: 44px; height: 42px; font-size: 18px; }
+  .tool-options .touch-buttons button { min-width: 44px; }
+  input[type="checkbox"] { width: 20px; height: 20px; }
+  input[type="range"] { height: 28px; }
+}
+.touch-buttons { display: inline-flex; gap: 4px; flex-wrap: wrap; }

@@ -330,7 +330,9 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let cache_root = app.path().app_cache_dir()?;
+            // Android may empty the cache folder when storage runs low; terrain unpacked from an
+            // archive has no source file to be rebuilt from there, so it lives with the app data
+            let cache_root = if cfg!(mobile) { app.path().app_local_data_dir()?.join("cache") } else { app.path().app_cache_dir()? };
             std::fs::create_dir_all(&cache_root)?;
             app.manage(AppState { cache_root, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
             if cfg!(debug_assertions) {

@@ -19,14 +19,39 @@ Supplement-Editor für die Weltkarte von Thessari: Städte, Routen, Staaten, Pro
 | `web/model/` | Projektdaten, Undo, Importe, Konflikte, Export, Obsidian, Zuschnitt an der Küste (Web Worker) |
 | `web/map/` | OpenLayers-Karte, Stile, Texturen |
 | `web/ui/` | Oberfläche (Preact) |
-| `web/view3d/` | 3D-Gelände und Globus (WebGL 2) |
-| `src-tauri/src/` | Heightmap-Prüfung und Kachelung, Küstenpolygone (Marching Squares), Flussvektorisierung (Zhang-Suen, Graph, Haupt- und Nebenflüsse), Köppen-Klassifizierung, Vault-Zugriff |
+| `web/view3d/` | 3D-Gelände und Globus (WebGL 2), Globus-Export als PNG, GIF und WebM |
+| `src-tauri/src/` | Heightmap-Prüfung und Kachelung, Satellitenbild-Kacheln, Küstenpolygone (Marching Squares), Flussvektorisierung (Zhang-Suen, Graph, Haupt- und Nebenflüsse), Köppen-Klassifizierung, `.veilmap`-Archiv, Vault-Zugriff |
+| `src-tauri/gen/android/` | Android-Projekt (von `tauri android init`) |
 
 Die Rasterarbeit übernimmt Rust selbst, GDAL wird nicht gebraucht: Der Import schreibt Relief- und Schummerungskacheln (256 px, Zoomstufen bis zur vollen Auflösung), ein 4096 × 2048-Höhenraster, die Küstenpolygone und die vollen Höhen in den App-Cache (`%LOCALAPPDATA%\de.veil.map-editor`). Fehlt der Cache, wird er beim Öffnen aus der Quelldatei neu gebaut, mit allen Prüfungen.
+
+## Satellitenbild
+
+Ein Farbexport aus Gaea (2:1, bei quadratischem Export die Mitte ausschneiden) wird wie das Relief zu einer Kachelpyramide und erscheint als Ebene „Satellitenbild“ (Preset „Satellit“). Der Globus kann es als Oberfläche tragen. Es ist nur Anzeige; das Gelände kommt weiter aus der Heightmap.
 
 ## Projektdatei
 
 `.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Typenlisten, Stile, Ebenen und Presets, Vault-Pfad. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
+
+## Archiv `.veilmap`
+
+„Datei → Als Archiv speichern“ packt das Projekt mit allem, was aus den Quelldateien abgeleitet wurde, in eine ZIP-Datei – zum Weitergeben, vor allem an das Tablet:
+
+| Eintrag | Inhalt |
+| --- | --- |
+| `veilmap.json` | Kennungen, Stempel, Einstellungen |
+| `project.veil` | das Projekt |
+| `terrain/<id>/` | Relief- und Schummerungskacheln (WebP), Höhenraster 4096 × 2048 und optional die Höhen (16-Bit-PNG, verlustfrei), Küstenpolygone, `meta.json` |
+| `koppen/<id>/` | Klimaklassen und `meta.json` (abwählbar) |
+| `satellite/<id>/` | Satellitenkacheln (WebP, abwählbar) |
+
+Die Kacheln werden beim Speichern von PNG nach WebP umgerechnet (Qualität einstellbar, Vorgabe 85, wahlweise verlustfrei) und ohne erneute Kompression abgelegt; schon vorhandene WebP-Kacheln laufen unverändert durch. Exakte Höhen gibt es in drei Stufen: nur das ≈10-km-Raster, halbe oder volle Auflösung. Richtwerte für eine 16k-Karte: Kacheln und Raster ~20–60 MB, halbe Höhen +~30 MB, volle Höhen +~100 MB. Quelldateien werden nie eingebettet.
+
+Beim Öffnen wird eine Datei am Inhalt erkannt (ZIP oder JSON). Ein Archiv wird in den App-Cache entpackt; ein eigener Import auf dem PC bleibt dabei unangetastet, ein Cache aus einem anderen Archiv wird am Stempel erkannt und ersetzt. „Speichern“ schreibt ein geöffnetes Archiv wieder als Archiv.
+
+## Globus
+
+Die 3D-Ansicht zeigt im Modus „Globus“ die Karte, das Satellitenbild oder das Relief auf der Kugel, mit Relief aus dem Höhenraster. Einstellbar sind Drehtempo und -richtung, Achsneigung, Sonne mit Tag-Nacht-Grenze, Atmosphäre, Wolken, Gradnetz und Hintergrund (transparent, Farbe, Sternenhimmel). Export: Standbild als PNG (mit Alphakanal), eine ganze Umdrehung als nahtlos loopendes GIF oder als WebM. Die Einstellungen stehen im Projekt.
 
 ## Export
 
@@ -43,6 +68,19 @@ npm run tauri dev
 ```
 
 Rust-Tests: `cargo test --lib` in `src-tauri`. Die Probeläufe gegen echte Dateien sind mit `--ignored` abrufbar (siehe `src-tauri/src/probe_tests.rs`).
+
+## Android
+
+Importiert wird am PC; das Gerät bekommt das fertige Archiv. Auf Touch-Geräten und in schmalen Fenstern werden Seitenleiste und Inspektor zu Schubladen; beim Zeichnen gibt es Knöpfe für Freihand, „Punkt zurück“ und „Übernehmen“, im Stützpunkt-Werkzeug einen Löschen-Schalter. Der Obsidian-Vault wird über den Pfad gelesen und braucht unter Android 11+ „Zugriff auf alle Dateien“ (App-Infos → Berechtigungen).
+
+Voraussetzungen: Android SDK mit NDK, JDK 17+, Rust-Targets `aarch64-linux-android` (und nach Bedarf `armv7-linux-androideabi`, `x86_64-linux-android`).
+
+```bash
+export ANDROID_HOME=… NDK_HOME=$ANDROID_HOME/ndk/<version>
+npm run tauri android build -- --apk --target aarch64
+```
+
+Die Release-APK ist unsigniert; zum Installieren mit `apksigner` signieren (eigener Schlüssel) oder `npm run tauri android dev` mit angeschlossenem Gerät nutzen.
 
 ## Windows-Build
 

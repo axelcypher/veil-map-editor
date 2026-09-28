@@ -3,21 +3,38 @@ import { listen } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import type { Platform } from './types'
 
-// custom protocols are served as http://<scheme>.localhost on Windows
-const protocolBase = navigator.userAgent.includes('Windows') ? 'http://veil.localhost/' : 'veil://localhost/'
+const android = /Android/i.test(navigator.userAgent)
+const mobile = android || /iPhone|iPad/i.test(navigator.userAgent)
+// custom protocols are served as http://<scheme>.localhost on Windows and Android
+const protocolBase = navigator.userAgent.includes('Windows') || android ? 'http://veil.localhost/' : 'veil://localhost/'
+
+/**
+ * Android's folder picker hands out a tree URI. Files in the vault are read by path (with "all
+ * files access"), so a folder on the internal storage becomes its path again.
+ */
+function treeToPath(uri: string) {
+  const match = uri.match(/^content:\/\/com\.android\.externalstorage\.documents\/tree\/([^/]+)/)
+  if (!match) return uri
+  const [volume, ...rest] = decodeURIComponent(match[1]).split(':')
+  const base = volume === 'primary' ? '/storage/emulated/0' : `/storage/${volume}`
+  return rest.join(':') ? `${base}/${rest.join(':')}` : base
+}
 
 export const tauriPlatform: Platform = {
   kind: 'desktop',
+  mobile,
   async pickFile(title, filters) {
-    const result = await open({ title, filters, multiple: false, directory: false })
+    // Android filters by MIME type; our own endings have none, so everything is offered there
+    const result = await open({ title, filters: android ? [] : filters, multiple: false, directory: false })
     return typeof result === 'string' ? result : null
   },
   async pickSavePath(title, suggested, filters) {
-    return (await save({ title, defaultPath: suggested, filters })) ?? null
+    return (await save({ title, defaultPath: suggested, filters: android ? [] : filters })) ?? null
   },
   async pickFolder(title) {
     const result = await open({ title, multiple: false, directory: true })
-    return typeof result === 'string' ? result : null
+    if (typeof result !== 'string') return null
+    return android ? treeToPath(result) : result
   },
   readText: path => invoke('read_text', { path }),
   writeText: (path, content) => invoke('write_text', { path, content }),

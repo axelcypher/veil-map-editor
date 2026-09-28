@@ -120,6 +120,8 @@ export interface Progress {
 
 export interface Platform {
   kind: 'desktop' | 'web'
+  /** Android (or iOS): no raster imports on the device, the terrain comes from an archive */
+  mobile: boolean
   pickFile(title: string, filters: FileFilter[]): Promise<string | null>
   pickSavePath(title: string, suggested: string, filters: FileFilter[]): Promise<string | null>
   pickFolder(title: string): Promise<string | null>

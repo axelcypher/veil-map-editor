@@ -170,36 +170,64 @@ export class Viewer {
     this.colorTexture = texture()
     this.emptyArray = gl.createVertexArray()!
 
-    let dragging: { x: number; y: number; pan: boolean } | null = null
+    // one pointer turns (or pans with the right button), two fingers pan and pinch-zoom the terrain
+    // and pinch-zoom the globe
+    const pointers = new Map<number, { x: number; y: number }>()
+    let pan = false
+    const spread = () => {
+      const [a, b] = [...pointers.values()]
+      return Math.hypot(a.x - b.x, a.y - b.y)
+    }
+    let pinch = 0
     canvas.addEventListener('pointerdown', event => {
-      dragging = { x: event.clientX, y: event.clientY, pan: event.button !== 0 }
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      pan = event.button !== 0
+      if (pointers.size === 2) pinch = spread()
       canvas.setPointerCapture(event.pointerId)
     })
     canvas.addEventListener('pointermove', event => {
-      if (!dragging) return
-      const dx = event.clientX - dragging.x
-      const dy = event.clientY - dragging.y
-      dragging = { ...dragging, x: event.clientX, y: event.clientY }
-      if (dragging.pan && this.mode === 'terrain') {
-        const scale = this.distance * this.worldSize * 0.0016
-        this.target[0] -= (Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy) * scale
-        this.target[1] -= (-Math.sin(this.yaw) * dx + Math.cos(this.yaw) * dy) * scale
+      const last = pointers.get(event.pointerId)
+      if (!last) return
+      const dx = event.clientX - last.x
+      const dy = event.clientY - last.y
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      if (pointers.size === 2) {
+        const now = spread()
+        this.zoomBy(pinch / Math.max(1, now))
+        pinch = now
+        if (this.mode === 'terrain') this.panBy(dx / 2, dy / 2)
+      } else if (pan && this.mode === 'terrain') {
+        this.panBy(dx, dy)
       } else {
-        this.yaw -= dx * 0.008
-        this.pitch = Math.min(1.5, Math.max(this.mode === 'globe' ? -1.5 : 0.08, this.pitch + dy * 0.008))
+        const speed = this.mode === 'globe' ? 0.008 / this.zoom : 0.008
+        this.yaw -= dx * speed
+        this.pitch = Math.min(1.5, Math.max(this.mode === 'globe' ? -1.5 : 0.08, this.pitch + dy * speed))
       }
       this.draw()
     })
-    const stop = () => { dragging = null }
+    const stop = (event: PointerEvent) => {
+      pointers.delete(event.pointerId)
+    }
     canvas.addEventListener('pointerup', stop)
     canvas.addEventListener('pointercancel', stop)
     canvas.addEventListener('wheel', event => {
       event.preventDefault()
-      if (this.mode === 'globe') this.zoom = Math.min(12, Math.max(0.4, this.zoom * Math.exp(-event.deltaY * 0.0012)))
-      else this.distance = Math.min(6, Math.max(0.15, this.distance * Math.exp(event.deltaY * 0.0012)))
+      this.zoomBy(Math.exp(event.deltaY * 0.0012))
       this.draw()
     }, { passive: false })
     canvas.addEventListener('contextmenu', event => event.preventDefault())
+  }
+
+  /** factor > 1 moves away */
+  private zoomBy(factor: number) {
+    if (this.mode === 'globe') this.zoom = Math.min(12, Math.max(0.4, this.zoom / factor))
+    else this.distance = Math.min(6, Math.max(0.15, this.distance * factor))
+  }
+
+  private panBy(dx: number, dy: number) {
+    const scale = this.distance * this.worldSize * 0.0016
+    this.target[0] -= (Math.cos(this.yaw) * dx + Math.sin(this.yaw) * dy) * scale
+    this.target[1] -= (-Math.sin(this.yaw) * dx + Math.cos(this.yaw) * dy) * scale
   }
 
   setMode(mode: 'terrain' | 'globe') {

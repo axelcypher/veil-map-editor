@@ -26,7 +26,9 @@ import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
 import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
-import { freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
+import { deleteVertices, freehand, freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
+import { altKeyOnly, shiftKeyOnly, singleClick } from 'ol/events/condition'
+import type MapBrowserEvent from 'ol/MapBrowserEvent'
 import { shownGeometry } from '../model/terrain'
 import type { KoppenMeta, SatelliteMeta, TerrainMeta } from '../platform'
 import { platform } from '../platform'
@@ -79,6 +81,11 @@ function fromOl(geometry: Geometry): Entity['geometry'] {
 export const filterCss = (f: Filter | undefined) =>
   !f ? '' : `grayscale(${f.grayscale}) sepia(${f.sepia}) saturate(${f.saturate}) brightness(${f.brightness}) contrast(${f.contrast}) hue-rotate(${f.hue}deg) blur(${f.blur}px) invert(${f.invert})`
 
+/** Shift, or the freehand switch for touch screens */
+const freehandCondition = (event: MapBrowserEvent) => freehand.peek() || shiftKeyOnly(event)
+/** Alt+click, or a tap while the delete switch is on */
+const deleteCondition = (event: MapBrowserEvent) => singleClick(event) && (deleteVertices.peek() || altKeyOnly(event))
+
 /** a tile pyramid from the cache: level z is 512·2^z px wide */
 function tileSource(meta: { maxZoom: number; tileSize: number; tileExt?: string }, path: string) {
   const ext = meta.tileExt || 'png'
@@ -107,6 +114,8 @@ export class MapView {
   private readonly measureSource = new VectorSource()
   private readonly coastSource = new VectorSource()
   private interactions: Interaction[] = []
+  /** the drawing in progress, for the touch buttons */
+  private activeDraw: Draw | null = null
   private context: StyleContext
   private styleVersion = 0
   private project: Project
@@ -478,9 +487,11 @@ export class MapView {
     this.tool = tool
     for (const interaction of this.interactions) this.map.removeInteraction(interaction)
     this.interactions = []
+    this.activeDraw = null
     const add = (interaction: Interaction) => {
       this.interactions.push(interaction)
       this.map.addInteraction(interaction)
+      if (interaction instanceof Draw) this.activeDraw = interaction
     }
     const target = this.map.getTargetElement()
     if (target) target.style.cursor = tool.id === 'select' ? '' : 'crosshair'
@@ -498,7 +509,7 @@ export class MapView {
         translate.on('translateend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(translate)
       } else if (feature && geometry instanceof LineString) {
-        const modify = new Modify({ features: new Collection([feature]) })
+        const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
       }
@@ -506,13 +517,13 @@ export class MapView {
     if (tool.id === 'vertices' && s) {
       const feature = this.editSource.getFeatures()[0] ?? this.features[s.kind].get(s.id)
       if (feature) {
-        const modify = new Modify({ features: new Collection([feature]) })
+        const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
       }
     }
     if (tool.id === 'draw-line') {
-      const draw = new Draw({ type: 'LineString', source: this.measureSource })
+      const draw = new Draw({ type: 'LineString', source: this.measureSource, freehandCondition })
       draw.on('drawend', event => {
         const geometry = fromOl(event.feature.getGeometry()!) as LineGeometry
         setTimeout(() => this.measureSource.clear())
@@ -522,7 +533,7 @@ export class MapView {
       add(draw)
     }
     if (tool.id === 'area-new' || tool.id === 'area-add' || tool.id === 'area-subtract') {
-      const draw = new Draw({ type: 'Polygon', source: this.measureSource })
+      const draw = new Draw({ type: 'Polygon', source: this.measureSource, freehandCondition })
       draw.on('drawend', event => {
         const drawn = (event.feature.getGeometry() as Polygon).getCoordinates() as LonLat[][]
         const polygon = drawn.map(ring => this.smooth(ring, true))
@@ -532,6 +543,15 @@ export class MapView {
       add(draw)
     }
     if (tool.id === 'measure') this.addMeasure(tool.mode, add)
+  }
+
+  /** the touch buttons: finish the drawing, take back the last point, or drop it */
+  drawAction(action: 'finish' | 'undo' | 'abort') {
+    const draw = this.activeDraw
+    if (!draw) return
+    if (action === 'finish') draw.finishDrawing()
+    else if (action === 'undo') draw.removeLastPoint()
+    else draw.abortDrawing()
   }
 
   /** freehand strokes get smoothed; the sampling follows the current zoom (about 2 px) */
@@ -554,7 +574,7 @@ export class MapView {
       type: mode === 'area' ? 'Polygon' : 'LineString',
       source: this.measureSource,
       maxPoints: mode === 'ruler' ? 2 : undefined,
-      freehandCondition: mode === 'ruler' ? () => false : undefined,
+      freehandCondition: mode === 'ruler' ? () => false : freehandCondition,
     })
     let listener: EventsKey | null = null
     draw.on('drawstart', event => {

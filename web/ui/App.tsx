@@ -93,7 +93,20 @@ function FileMenu({ onClose }: { onClose: () => void }) {
   )
 }
 
-function Header({ panel, setPanel, show3d }: { panel: Panel; setPanel: (p: Panel) => void; show3d: () => void }) {
+/** touch screens and narrow windows: sidebar and inspector become drawers over the map */
+function useCompact() {
+  const query = '(max-width: 1100px), (pointer: coarse)'
+  const [compact, setCompact] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const change = () => setCompact(media.matches)
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
+  return compact
+}
+
+function Header({ panel, setPanel, show3d }: { panel: Panel | null; setPanel: (p: Panel) => void; show3d: () => void }) {
   const [menu, setMenu] = useState(false)
   return (
     <header class="app-header">
@@ -278,6 +291,13 @@ function useShortcuts() {
 export function App() {
   const container = useRef<HTMLDivElement>(null)
   const [panel, setPanel] = useState<Panel>('data')
+  const compact = useCompact()
+  const [drawer, setDrawer] = useState(false)
+  // in a drawer, the tab of the open panel closes it again
+  const choosePanel = (next: Panel) => {
+    if (compact) setDrawer(!(drawer && next === panel))
+    setPanel(next)
+  }
   const [overview, setOverview] = useState<OverviewId>('states')
   const [show3d, setShow3d] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('veil.sidebar') ?? 420))
@@ -312,9 +332,10 @@ export function App() {
     window.addEventListener('pointerup', up)
   }
   return (
-    <div class="app">
-      <Header panel={panel} setPanel={setPanel} show3d={() => setShow3d(!show3d)} />
+    <div class={`app${compact ? ' compact' : ''}${compact && drawer ? ' drawer-open' : ''}`}>
+      <Header panel={compact && !drawer ? null : panel} setPanel={choosePanel} show3d={() => setShow3d(!show3d)} />
       <div class="workspace">
+        {compact && drawer && <div class="drawer-scrim" onClick={() => setDrawer(false)} />}
         <aside class="sidebar" style={{ width: `${sidebarWidth}px` }}>
           {panel === 'layers' && <LayersPanel />}
           {panel === 'data' && <Overviews active={overview} onChange={setOverview} />}
@@ -332,7 +353,7 @@ export function App() {
           {!terrain.value && (
             <div class="empty-map">
               <p>Noch kein Gelände geladen.</p>
-              <button class="primary" onClick={() => setPanel('project')}>
+              <button class="primary" onClick={() => choosePanel('project')}>
                 Heightmap importieren
               </button>
             </div>

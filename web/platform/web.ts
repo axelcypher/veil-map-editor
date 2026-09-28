@@ -32,6 +32,7 @@ function restApi(root: string) {
 
 export const webPlatform: Platform = {
   kind: 'web',
+  mobile: false,
   async pickFile(_title, filters) {
     const file = await pick(filters.flatMap(f => f.extensions.map(e => `.${e}`)).join(','))
     if (!file) return null

@@ -49,29 +49,50 @@ function Report() {
   )
 }
 
+/** on the device: what the archive brought along; importing happens on the PC */
+function TerrainInfo() {
+  const t = terrain.value
+  return (
+    <>
+      <TerrainStats />
+      {t && !t.meta.fullHeights && <p class="hint">Ohne exakte Höhen im Archiv: Punktinfo und Konfliktprüfung rechnen mit dem ≈10-km-Raster.</p>}
+      {satellite.value && <p class="hint">Satellitenbild vorhanden (Ebene „Satellitenbild“).</p>}
+      <p class="hint">
+        Heightmap, Satellitenbild, Flüsse und Klima werden am PC importiert und kommen als Archiv (.veilmap) auf das Gerät: dort „Datei → Als Archiv speichern“, hier „Datei → Öffnen“.
+      </p>
+    </>
+  )
+}
+
+function TerrainStats() {
+  const p = project.value
+  const t = terrain.value
+  if (!t) return null
+  return (
+    <dl class="stats">
+      <dt>Datei</dt>
+      <dd title={t.meta.source}>{t.meta.source.split(/[\\/]/).pop()}</dd>
+      <dt>Größe</dt>
+      <dd>
+        {formatInt(t.meta.width)} × {formatInt(t.meta.height)} px · {((Math.PI * 2 * p.planetRadius) / t.meta.width / 1000).toFixed(2).replace('.', ',')} km/px
+      </dd>
+      <dt>Höhen</dt>
+      <dd>
+        {formatInt(t.meta.minM)} … {formatInt(t.meta.maxM)} m
+      </dd>
+      <dt>Meer</dt>
+      <dd>{(t.meta.seaFraction * 100).toFixed(1).replace('.', ',')} %</dd>
+    </dl>
+  )
+}
+
 function TerrainImport() {
   const p = project.value
   const [path, setPath] = useState(p.terrain?.source ?? '')
   const [crop, setCrop] = useState(p.terrain?.cropSquare ?? false)
-  const t = terrain.value
   return (
     <>
-      {t && (
-        <dl class="stats">
-          <dt>Datei</dt>
-          <dd title={t.meta.source}>{t.meta.source.split(/[\\/]/).pop()}</dd>
-          <dt>Größe</dt>
-          <dd>
-            {formatInt(t.meta.width)} × {formatInt(t.meta.height)} px · {((Math.PI * 2 * p.planetRadius) / t.meta.width / 1000).toFixed(2).replace('.', ',')} km/px
-          </dd>
-          <dt>Höhen</dt>
-          <dd>
-            {formatInt(t.meta.minM)} … {formatInt(t.meta.maxM)} m
-          </dd>
-          <dt>Meer</dt>
-          <dd>{(t.meta.seaFraction * 100).toFixed(1).replace('.', ',')} %</dd>
-        </dl>
-      )}
+      <TerrainStats />
       <Field label="Heightmap" hint="16 Bit, 2:1, unsere Höhenkodierung (Meeresspiegel = 50 % Grau)" wide>
         <PathPicker value={path} onChange={setPath} title="Heightmap aus Gaea/Photoshop" />
       </Field>
@@ -369,6 +390,7 @@ function Obsidian() {
         {vaultNotes.value && <span class="muted">{vaultNotes.value.length} Notes</span>}
       </div>
       {vaultError.value && <p class="error-text">{vaultError.value}</p>}
+      {vaultError.value && platform.mobile && <p class="hint">Android: In den App-Infos unter Berechtigungen „Zugriff auf alle Dateien“ erlauben, dann den Vault neu einlesen.</p>}
       <p class="hint">Lesbar ist nur echtes Frontmatter; Werte, die erst Dataview berechnet, stehen nicht in der Datei.</p>
     </>
   )
@@ -419,21 +441,29 @@ export function ProjectPanel() {
           <Num value={p.planetRadius} min={1000} onChange={v => patchProject({ planetRadius: v }, 'radius')} />
         </Field>
       </Section>
-      <Section title="Heightmap (Gaea)">
-        <TerrainImport />
-      </Section>
-      <Section title="Satellitenbild (Gaea)" open={false}>
-        <SatelliteImport />
-      </Section>
-      <Section title="Kontrollpunkte" open={p.controlPoints.length === 0}>
-        <ControlPoints />
-      </Section>
-      <Section title="Flüsse (Gaea-Maske)" open={false}>
-        <RiverImport />
-      </Section>
-      <Section title="Klima (Köppen)" open={false}>
-        <KoppenImport />
-      </Section>
+      {platform.mobile ? (
+        <Section title="Gelände">
+          <TerrainInfo />
+        </Section>
+      ) : (
+        <>
+          <Section title="Heightmap (Gaea)">
+            <TerrainImport />
+          </Section>
+          <Section title="Satellitenbild (Gaea)" open={false}>
+            <SatelliteImport />
+          </Section>
+          <Section title="Kontrollpunkte" open={p.controlPoints.length === 0}>
+            <ControlPoints />
+          </Section>
+          <Section title="Flüsse (Gaea-Maske)" open={false}>
+            <RiverImport />
+          </Section>
+          <Section title="Klima (Köppen)" open={false}>
+            <KoppenImport />
+          </Section>
+        </>
+      )}
       <Section title="Obsidian" open={false}>
         <Obsidian />
       </Section>
