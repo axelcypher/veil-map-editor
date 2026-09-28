@@ -1,15 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Dialoge zum Öffnen und Speichern; Dateizugriff läuft über eigene Befehle",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:default",
-    "fs:default",
-    "fs:read-files",
-    "fs:write-files"
+    "dialog:default"
   ]
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Veil Map Editor",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "identifier": "de.veil.map-editor",
   "build": {
     "frontendDist": "../dist",

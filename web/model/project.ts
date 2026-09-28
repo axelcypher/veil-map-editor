@@ -1,0 +1,176 @@
+// Creating, reading and writing projects, and new elements with sensible defaults.
+import { defaultCatalog, defaultDisplay, defaultKoppenClasses, defaultLayers, defaultStyle } from './catalog'
+import type { City, Culture, EntityKind, EntityMap, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Zone } from './types'
+
+export const PLANET_RADIUS = 6_606_727
+
+export const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+
+export function newProject(): Project {
+  return {
+    format: 'veil-project',
+    version: 1,
+    name: 'Thessari',
+    planetRadius: PLANET_RADIUS,
+    terrain: null,
+    koppen: null,
+    riverImport: null,
+    controlPoints: [],
+    koppenClasses: defaultKoppenClasses(),
+    states: [],
+    provinces: [],
+    cultures: [],
+    religions: [],
+    zones: [],
+    cities: [],
+    routes: [],
+    rivers: [],
+    labels: [],
+    markers: [],
+    regiments: [],
+    diplomacy: {},
+    catalog: defaultCatalog(),
+    style: defaultStyle(),
+    layers: defaultLayers(),
+    layerPresets: [],
+    stylePresets: [],
+    display: defaultDisplay(),
+    obsidian: { vaultPath: '', vaultName: '' },
+    view: { center: [0, 0], zoom: 1 },
+  }
+}
+
+const PALETTE = ['#c0504d', '#4f81bd', '#9bbb59', '#8064a2', '#f79646', '#4bacc6', '#d4a017', '#a0522d', '#2e8b57', '#b03060', '#5f9ea0', '#cd853f', '#6a5acd', '#708090']
+export const nextColor = (used: number) => PALETTE[used % PALETTE.length]
+
+const base = (prefix: string, name: string) => ({ id: newId(prefix), name, description: '', note: '' })
+
+export const create = {
+  state: (p: Project): State => ({
+    ...base('state', `Staat ${p.states.length + 1}`),
+    color: nextColor(p.states.length),
+    geometry: null,
+    clip: true,
+    fullName: '',
+    form: p.catalog.stateForms[0]?.id ?? '',
+    capitalId: '',
+    ruralDensity: 10,
+    cultureId: '',
+    religionId: '',
+  }),
+  province: (p: Project, stateId = ''): Province => ({
+    ...base('prov', `Provinz ${p.provinces.length + 1}`),
+    color: p.states.find(s => s.id === stateId)?.color ?? nextColor(p.provinces.length + 3),
+    geometry: null,
+    clip: true,
+    stateId,
+    form: 'Provinz',
+    capitalId: '',
+    ruralDensity: null,
+  }),
+  culture: (p: Project): Culture => ({
+    ...base('cult', `Kultur ${p.cultures.length + 1}`),
+    color: nextColor(p.cultures.length + 5),
+    geometry: null,
+    clip: true,
+    type: p.catalog.cultureTypes[0]?.id ?? '',
+    origins: [],
+  }),
+  religion: (p: Project): Religion => ({
+    ...base('rel', `Religion ${p.religions.length + 1}`),
+    color: nextColor(p.religions.length + 8),
+    geometry: null,
+    clip: true,
+    type: p.catalog.religionTypes[0]?.id ?? '',
+    form: '',
+    deity: '',
+    origins: [],
+  }),
+  zone: (p: Project): Zone => {
+    const type = p.catalog.zoneTypes[0]
+    return {
+      ...base('zone', `Zone ${p.zones.length + 1}`),
+      color: type?.color ?? '#b22222',
+      geometry: null,
+      clip: false,
+      type: type?.id ?? '',
+      pattern: type?.pattern ?? 'hatch',
+      opacity: 0.35,
+    }
+  },
+  city: (p: Project, at: LonLat): City => ({
+    ...base('city', `Stadt ${p.cities.length + 1}`),
+    geometry: { type: 'Point', coordinates: at },
+    type: 'town',
+    population: 5000,
+    features: { capital: false, port: false, citadel: false, walls: true, plaza: true, temple: false, shanty: false },
+    group: '',
+    plan: '',
+  }),
+  route: (p: Project, line: LonLat[], type = 'road'): Route => ({
+    ...base('route', `Route ${p.routes.length + 1}`),
+    geometry: { type: 'LineString', coordinates: line },
+    type,
+  }),
+  label: (_p: Project, geometry: Label['geometry']): Label => ({
+    ...base('label', 'Beschriftung'),
+    geometry,
+    category: geometry.type === 'LineString' ? 'mountains' : 'region',
+    size: null,
+    color: null,
+    italic: null,
+    uppercase: null,
+    spacing: null,
+    rotation: 0,
+  }),
+  marker: (p: Project, at: LonLat, type = 'poi'): Marker => ({
+    ...base('marker', `${p.catalog.markerTypes.find(t => t.id === type)?.name ?? 'Marker'} ${p.markers.length + 1}`),
+    geometry: { type: 'Point', coordinates: at },
+    type,
+    size: 1,
+  }),
+  regiment: (p: Project, at: LonLat, stateId = ''): Regiment => ({
+    ...base('reg', `${p.regiments.length + 1}. Regiment`),
+    geometry: { type: 'Point', coordinates: at },
+    stateId,
+    units: { infantry: 1000 },
+    commander: '',
+    naval: false,
+  }),
+}
+
+export const KIND_NAMES: Record<EntityKind, [string, string]> = {
+  state: ['Staat', 'Staaten'],
+  province: ['Provinz', 'Provinzen'],
+  culture: ['Kultur', 'Kulturen'],
+  religion: ['Religion', 'Religionen'],
+  zone: ['Zone', 'Zonen'],
+  city: ['Stadt', 'Städte'],
+  route: ['Route', 'Routen'],
+  river: ['Fluss', 'Flüsse'],
+  label: ['Beschriftung', 'Beschriftungen'],
+  marker: ['Marker', 'Marker'],
+  regiment: ['Regiment', 'Regimenter'],
+}
+
+/** fills in everything a file from an older or hand-edited version lacks */
+export function parseProject(text: string): Project {
+  const data = JSON.parse(text) as Partial<Project> & { format?: string; veil?: unknown }
+  if (data.format !== 'veil-project') {
+    if (data.veil) throw new Error('Das ist eine .veilmap-Datei des alten Höheneditors. Sie enthält eigenes Gelände und lässt sich nicht übernehmen.')
+    throw new Error('Keine Veil-Projektdatei.')
+  }
+  const fresh = newProject()
+  const merged = { ...fresh, ...data } as Project
+  merged.catalog = { ...fresh.catalog, ...data.catalog }
+  merged.style = { ...fresh.style, ...data.style }
+  for (const id of Object.keys(fresh.style) as (keyof Project['style'])[]) merged.style[id] = { ...fresh.style[id], ...data.style?.[id] }
+  merged.display = { ...fresh.display, ...data.display }
+  const known = new Set((data.layers ?? []).map(l => l.id))
+  merged.layers = [...(data.layers ?? []), ...fresh.layers.filter(l => !known.has(l.id))]
+  return merged
+}
+
+export const serializeProject = (project: Project) => JSON.stringify(project, null, 1)
+
+export type Collection<K extends EntityKind> = EntityMap[K][]

@@ -8,4 +8,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
+  oxc: {
+    jsx: { runtime: 'automatic', importSource: 'preact' },
+  },
+  server: { port: 5173, strictPort: true },
+  build: { chunkSizeWarningLimit: 3000 },
 })

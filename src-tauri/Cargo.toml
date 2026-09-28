@@ -1,14 +1,12 @@
 [package]
 name = "veil-map-editor"
-version = "0.3.2"
-description = "A focused fantasy map editor"
+version = "0.4.0"
+description = "Supplement-Editor für die Weltkarte: Städte, Routen, Staaten und weitere Karteninhalte"
 authors = ["Tobias"]
 license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "veil_map_editor_lib"
@@ -24,4 +22,10 @@ log = "0.4"
 tauri = { version = "2.11.6", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+image = { version = "0.25", default-features = false, features = ["png", "tiff", "jpeg", "webp", "rayon"] }
+rayon = "1.10"
+blake3 = "1.5"
+
+[profile.dev.package."*"]
+opt-level = 3

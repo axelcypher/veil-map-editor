@@ -1,33 +1,19 @@
 # Drittanbieter-Hinweise
 
-Die Terrain-Module in `src/terrain/` (Höhenvorlagen und -generator, Feature-Erkennung, Küstenlinien, Klima und Biome) sind aus dem
-[Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator) von Azgaar portiert, der unter der MIT-Lizenz steht.
-Die Küstenvereinfachung folgt [simplify-js](https://github.com/mourner/simplify-js) von Vladimir Agafonkin (BSD-2-Clause).
+## Bibliotheken (über npm bzw. Cargo eingebunden)
 
-## Fantasy Map Generator
+| Paket | Lizenz | Zweck |
+| --- | --- | --- |
+| [OpenLayers](https://openlayers.org/) | BSD-2-Clause | Kartendarstellung in EPSG:4326 |
+| [Preact](https://preactjs.com/), @preact/signals | MIT | Oberfläche |
+| [polygon-clipping](https://github.com/mfogel/polygon-clipping) | MIT | Flächen vereinigen, abziehen, an der Küste zuschneiden |
+| [yaml](https://eemeli.org/yaml/) | ISC | Frontmatter der Obsidian-Notes lesen |
+| [Tauri](https://tauri.app/) und Plugins | MIT / Apache-2.0 | Desktop-Rahmen |
+| [image](https://github.com/image-rs/image), [rayon](https://github.com/rayon-rs/rayon), [blake3](https://github.com/BLAKE3-team/BLAKE3) | MIT / Apache-2.0 | Raster lesen, parallel rechnen, Datei-Hashes |
 
-MIT License
+## Vorlagen und Werte
 
-Copyright 2017-2024 Max Haniyeu (Azgaar), azgaar.fmg@yandex.com
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-You can produce, without restrictions, any derivative works from the original
-software and even reap commercial benefits from the sale of the secondary product.
-The derivates include created maps, map images, screenshots, videos, and other materials.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+- **Azgaar's Fantasy Map Generator** (MIT, Copyright 2017-2024 Max Haniyeu) diente als Funktionsvorlage. Code ist nicht übernommen; aus FMG stammt die Faustformel für die Stadtgröße des Plan-Generators (`2,13 · (Einwohner/1000)^0,385`).
+- **World Orogen** (GPL-3.0, raguilar011095/planet_heightmap_generation): Übernommen sind nur die Farbwerte der Köppen-Klassen, damit die Klimakarte ohne Handarbeit zugeordnet wird. Kein Code.
+- **Stadtplan-Generatoren** von watabou werden nur verlinkt (Parameter in der URL), nicht eingebunden.
+- Der 3D-Viewer stammt aus dem eigenen Archivstand `v0.3.2-terrain`.
