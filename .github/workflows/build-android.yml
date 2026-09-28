@@ -132,5 +132,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.version.outputs.version }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Veil Map Editor $TAG" --generate-notes
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "VEIL Map Editor $TAG" --generate-notes
           gh release upload "$TAG" out/* --clobber
