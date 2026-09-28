@@ -13,6 +13,8 @@ export interface TerrainState {
 export const terrain = signal<TerrainState | null>(null)
 export const koppen = signal<{ meta: KoppenMeta; classes: Uint8Array } | null>(null)
 export const satellite = signal<SatelliteMeta | null>(null)
+/** own image layers that are in the cache, by cache id */
+export const imageLayerData = signal<Map<string, SatelliteMeta>>(new Map())
 
 async function fetchBinary(path: string) {
   const response = await fetch(platform.cacheUrl(path))
@@ -37,11 +39,21 @@ export async function loadKoppenData(id: string) {
   koppen.value = { meta, classes }
 }
 
-export async function loadSatelliteData(id: string) {
+async function pictureMeta(id: string) {
   const response = await fetch(platform.cacheUrl(`satellite/${id}/meta.json`))
-  if (!response.ok) throw new Error('Kein Cache für das Satellitenbild vorhanden.')
-  satellite.value = (await response.json()) as SatelliteMeta
+  if (!response.ok) throw new Error('Kein Cache für dieses Bild vorhanden.')
+  return (await response.json()) as SatelliteMeta
 }
+
+export async function loadSatelliteData(id: string) {
+  satellite.value = await pictureMeta(id)
+}
+
+export async function loadImageLayerData(id: string) {
+  const meta = await pictureMeta(id)
+  imageLayerData.value = new Map(imageLayerData.value).set(id, meta)
+}
+
 
 export function clearTerrain() {
   terrain.value = null

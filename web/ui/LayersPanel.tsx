@@ -1,7 +1,7 @@
 // Layers (visibility, order, opacity), layer presets and the map frame: grid, compass, scale bar,
 // texture and colour filters.
 import { useState } from 'preact/hooks'
-import { BUILTIN_LAYER_PRESETS, LAYER_NAMES, neutralFilter } from '../model/catalog'
+import { BUILTIN_LAYER_PRESETS, layerName, neutralFilter } from '../model/catalog'
 import { newId } from '../model/project'
 import { patchProject, project } from '../model/store'
 import type { Display, Filter, LayerId, LayerPreset } from '../model/types'
@@ -39,7 +39,7 @@ function LayerList() {
         >
           <span class="grip" title="Ziehen zum Umsortieren">⋮⋮</span>
           <input type="checkbox" checked={layer.visible} onChange={e => setLayer(layer.id, { visible: (e.target as HTMLInputElement).checked })} />
-          <span class="layer-name">{LAYER_NAMES[layer.id]}</span>
+          <span class="layer-name">{layerName(p, layer.id)}</span>
           <input
             type="range"
             min={0}
@@ -147,7 +147,7 @@ function Filters() {
   return (
     <>
       <Field label="Anwenden auf">
-        <Select value={target} onChange={v => setTarget(v)} options={[{ id: 'map' as const, name: 'ganze Karte' }, ...p.layers.map(l => ({ id: l.id, name: LAYER_NAMES[l.id] }))]} />
+        <Select value={target} onChange={v => setTarget(v)} options={[{ id: 'map' as const, name: 'ganze Karte' }, ...p.layers.map(l => ({ id: l.id, name: layerName(p, l.id) }))]} />
       </Field>
       <div class="preset-row">
         {FILTER_PRESETS.map(f => (

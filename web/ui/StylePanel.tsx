@@ -3,11 +3,15 @@ import { useState } from 'preact/hooks'
 import { BUILTIN_STYLE_PRESETS, LAYER_NAMES } from '../model/catalog'
 import { newId } from '../model/project'
 import { patchProject, project } from '../model/store'
-import type { Catalog, LayerId, LayerStyle, StylePreset } from '../model/types'
+import type { BuiltinLayerId, Catalog, LayerStyle, StylePreset } from '../model/types'
 import { Check, Color, Field, Num, Section, Select, Text } from './components'
 
-const STYLED: LayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
+const STYLED: BuiltinLayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
 const FONTS = [
+  { id: '"Cinzel", serif', name: 'Cinzel' },
+  { id: '"Forum", serif', name: 'Forum' },
+  { id: '"Marcellus", serif', name: 'Marcellus' },
+  { id: '"Aref Ruqaa Ink", serif', name: 'Aref Ruqaa Ink' },
   { id: 'Georgia, serif', name: 'Georgia (Serif)' },
   { id: '"Palatino Linotype", "Book Antiqua", serif', name: 'Palatino' },
   { id: '"Times New Roman", serif', name: 'Times' },
@@ -18,7 +22,7 @@ const FONTS = [
   { id: '"Lucida Calligraphy", "Segoe Script", cursive', name: 'Kalligrafie' },
 ]
 
-function LayerStyleEditor({ id }: { id: LayerId }) {
+function LayerStyleEditor({ id }: { id: BuiltinLayerId }) {
   const p = project.value
   const s = p.style[id]
   const set = (patch: Partial<LayerStyle>, key: string) => patchProject({ style: { ...p.style, [id]: { ...s, ...patch } } }, `style-${id}-${key}`)
@@ -280,7 +284,7 @@ function ListEditor({ def }: { def: (typeof LISTS)[number] }) {
 }
 
 export function StylePanel() {
-  const [layer, setLayer] = useState<LayerId>('states')
+  const [layer, setLayer] = useState<BuiltinLayerId>('states')
   const [listKey, setListKey] = useState<ListKey>('cityTypes')
   const def = LISTS.find(l => l.key === listKey)!
   return (

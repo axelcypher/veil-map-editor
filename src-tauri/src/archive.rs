@@ -1,5 +1,5 @@
 // The .veilmap archive: a project together with everything the import derived from the source files
-// (terrain tiles, grid, coast, climate classes, the satellite picture), so another device can show
+// (terrain tiles, grid, coast, climate classes, the satellite picture, own image layers), so another device can show
 // the map without the sources. A ZIP: tiles are WebP and stored as they are, the rest is deflated.
 // Opening unpacks it into the app cache, where the rest of the app finds it like a local import.
 use crate::heightmap;
@@ -27,6 +27,9 @@ pub struct SaveOptions {
     pub terrain_id: Option<String>,
     pub koppen_id: Option<String>,
     pub satellite_id: Option<String>,
+    /// own image layers (pre-rendered map styles); stored like the satellite picture
+    #[serde(default)]
+    pub image_ids: Vec<String>,
     pub tiles: TileEncoding,
     /// heights for exact point heights and conflict checks: "none" (the ≈10 km grid always comes
     /// along), "half" (half resolution, a quarter of the size) or "full"
@@ -63,6 +66,8 @@ struct Manifest {
     terrain: Option<String>,
     koppen: Option<String>,
     satellite: Option<String>,
+    #[serde(default)]
+    images: Vec<String>,
     full_heights: bool,
     quality: f32,
     lossless: bool,
@@ -217,6 +222,7 @@ pub fn write(options: &SaveOptions, cache_root: &Path, out: &Path, progress: &dy
         terrain: options.terrain_id.clone(),
         koppen: options.koppen_id.clone(),
         satellite: options.satellite_id.clone(),
+        images: options.image_ids.clone(),
         full_heights,
         quality: options.tiles.quality,
         lossless: options.tiles.lossless,
@@ -273,10 +279,19 @@ pub fn write(options: &SaveOptions, cache_root: &Path, out: &Path, progress: &dy
         w.put_file(&format!("koppen/{id}/classes.u8"), &dir.join("classes.u8"), true)?;
         w.put_file(&format!("koppen/{id}/meta.json"), &dir.join("meta.json"), true)?;
     }
-    if let Some(id) = &options.satellite_id {
+    // the satellite picture and the image layers share one cache format; each is written once
+    let mut pictures: Vec<&String> = Vec::new();
+    for id in options.satellite_id.iter().chain(options.image_ids.iter()) {
+        if !pictures.contains(&id) {
+            pictures.push(id);
+        }
+    }
+    let share = 0.28 / pictures.len().max(1) as f32;
+    for (i, id) in pictures.iter().enumerate() {
         let dir = crate::satellite::cache_dir(cache_root, id);
         let prefix = format!("satellite/{id}");
-        w.put_tiles(&format!("{prefix}/tiles"), &dir.join("tiles"), options.tiles, &|f| progress("Satellitenbild komprimieren", 0.7 + 0.28 * f))?;
+        let stage = if Some(*id) == options.satellite_id.as_ref() { "Satellitenbild komprimieren" } else { "Bildebenen komprimieren" };
+        w.put_tiles(&format!("{prefix}/tiles"), &dir.join("tiles"), options.tiles, &|f| progress(stage, 0.7 + share * (i as f32 + f)))?;
         w.put(&format!("{prefix}/meta.json"), &patched_meta(&dir.join("meta.json"), &[("tileExt", "webp".into())])?, true)?;
     }
     let (tiles, tile_bytes) = (w.tiles, w.tile_bytes);
@@ -317,18 +332,23 @@ pub fn open(path: &Path, cache_root: &Path, progress: &dyn Fn(&str, f32)) -> Res
         entry.read_to_string(&mut text).map_err(|e| e.to_string())?;
         Ok(text)
     };
-    let manifest: Manifest = serde_json::from_str(&read_text(&mut zip, MANIFEST)?).map_err(|e| format!("Kein Veil-Archiv: {e}"))?;
+    let manifest: Manifest = serde_json::from_str(&read_text(&mut zip, MANIFEST)?).map_err(|e| format!("Kein VEIL-Archiv: {e}"))?;
     if manifest.format != "veilmap" {
-        return Err("Kein Veil-Archiv.".into());
+        return Err("Kein VEIL-Archiv.".into());
     }
     let project = read_text(&mut zip, PROJECT)?;
 
     let mut unpacked = Vec::new();
-    let parts: Vec<(&str, String)> = PARTS
+    let mut parts: Vec<(&str, String)> = PARTS
         .iter()
         .zip([&manifest.terrain, &manifest.koppen, &manifest.satellite])
         .filter_map(|(kind, id)| id.clone().map(|id| (*kind, id)))
         .collect();
+    for id in &manifest.images {
+        if !parts.iter().any(|(kind, existing)| *kind == "satellite" && existing == id) {
+            parts.push(("satellite", id.clone()));
+        }
+    }
     for (index, (kind, id)) in parts.iter().enumerate() {
         if id.is_empty() || id.contains(['/', '\\', '.']) {
             return Err(format!("Ungültige Kennung im Archiv: {id}"));
@@ -419,6 +439,7 @@ mod tests {
             terrain_id: Some(meta.id.clone()),
             koppen_id: None,
             satellite_id: None,
+            image_ids: vec![],
             tiles: TileEncoding { quality: 80.0, lossless: false },
             heights: "full".into(),
         };
@@ -463,6 +484,7 @@ mod tests {
             terrain_id: Some(meta.id.clone()),
             koppen_id: None,
             satellite_id: None,
+            image_ids: vec![],
             tiles: TileEncoding { quality: 10.0, lossless: false },
             heights: "full".into(),
         };
@@ -484,6 +506,7 @@ mod tests {
             terrain_id: Some(meta.id.clone()),
             koppen_id: None,
             satellite_id: None,
+            image_ids: vec![],
             tiles: TileEncoding { quality: 80.0, lossless: false },
             heights: "half".into(),
         };
@@ -499,6 +522,40 @@ mod tests {
         let tablet2 = temp("tablet2");
         open(&again_half, &tablet2, &|_, _| {}).unwrap();
         assert_eq!(heightmap::load_cached(&tablet2, &meta.id).unwrap().1.width, map.width / 2);
+    }
+
+    #[test]
+    fn image_layers_travel_with_their_transparency() {
+        let pc = temp("images-pc");
+        let source = pc.join("borders.png");
+        // a 2:1 overlay: a red band on a transparent world
+        image::RgbaImage::from_fn(1024, 512, |_, y| if (200..260).contains(&y) { image::Rgba([220, 30, 30, 255]) } else { image::Rgba([0, 0, 0, 0]) })
+            .save(&source)
+            .unwrap();
+        let meta = crate::satellite::import(&crate::satellite::SatelliteOptions { path: source.to_string_lossy().into(), crop_square: false }, &pc, &|_, _| {}).unwrap();
+        assert!(meta.alpha);
+        let out = pc.join("layers.veilmap");
+        let save = SaveOptions {
+            project: "{}".into(),
+            terrain_id: None,
+            koppen_id: None,
+            satellite_id: None,
+            image_ids: vec![meta.id.clone(), meta.id.clone()],
+            tiles: TileEncoding { quality: 85.0, lossless: false },
+            heights: "none".into(),
+        };
+        let report = write(&save, &pc, &out, &|_, _| {}).unwrap();
+        assert_eq!(report.tiles, 8 + 2, "each layer is written once");
+
+        let tablet = temp("images-tablet");
+        let opened = open(&out, &tablet, &|_, _| {}).unwrap();
+        assert_eq!(opened.unpacked, vec!["satellite".to_string()]);
+        let dir = crate::satellite::cache_dir(&tablet, &meta.id);
+        let tile = image::open(dir.join("tiles/1/0/0.webp")).unwrap().to_rgba8();
+        assert!(tile.get_pixel(10, 10)[3] < 10, "outside the band stays transparent");
+        assert!(tile.get_pixel(10, 230)[3] > 245);
+        let unpacked: crate::satellite::SatelliteMeta = serde_json::from_str(&fs::read_to_string(dir.join("meta.json")).unwrap()).unwrap();
+        assert_eq!(unpacked.tile_ext, "webp");
     }
 
     #[test]

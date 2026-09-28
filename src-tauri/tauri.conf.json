@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Veil Map Editor",
+  "productName": "VEIL Map Editor",
   "version": "0.4.0",
   "identifier": "de.veil.map-editor",
   "build": {
@@ -12,7 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "Veil Map Editor",
+        "title": "VEIL Map Editor",
+        "decorations": false,
+        "shadow": true,
         "width": 1280,
         "height": 820,
         "minWidth": 900,

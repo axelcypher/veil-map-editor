@@ -1,13 +1,13 @@
 // Project settings, the three imports (heightmap, rivers, climate), control points, the Obsidian
 // vault and the exports.
 import { useState } from 'preact/hooks'
-import { IMAGE_FILTER, importKoppen, importRivers, importSatellite, importTerrain, lastArchive, lastReport, saveArchive } from '../model/actions'
+import { IMAGE_FILTER, importImageLayer, importKoppen, importRivers, importSatellite, importTerrain, lastArchive, lastReport, removeImageLayer, saveArchive } from '../model/actions'
 import { EXPORT_LAYERS, exportGeoJson, exportJson } from '../model/export'
 import { formatInt, formatLonLat } from '../model/geo'
 import { refreshVault, vaultError, vaultNotes } from '../model/obsidian'
 import { KIND_NAMES, newId } from '../model/project'
 import { busy, commit, patchProject, project, tool } from '../model/store'
-import { koppen, satellite, terrain } from '../model/terrain'
+import { imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import type { ControlPoint, EntityKind, KoppenClass } from '../model/types'
 import { platform } from '../platform'
 import { Check, Field, Num, Section, Select, Text } from './components'
@@ -141,6 +141,66 @@ function SatelliteImport() {
   )
 }
 
+/** own pictures of the planet as layers, e.g. pre-rendered map styles */
+function ImageLayers() {
+  const p = project.value
+  const [path, setPath] = useState('')
+  const [name, setName] = useState('')
+  const [crop, setCrop] = useState(false)
+  const rename = (id: string, value: string) =>
+    patchProject({ imageLayers: p.imageLayers.map(l => (l.id === id ? { ...l, name: value } : l)) }, `image-name-${id}`)
+  return (
+    <>
+      {p.imageLayers.length > 0 && (
+        <ul class="image-layers">
+          {p.imageLayers.map(layer => {
+            const meta = imageLayerData.value.get(layer.id)
+            return (
+              <li key={layer.id}>
+                <input type="text" value={layer.name} onInput={e => rename(layer.id, (e.target as HTMLInputElement).value)} />
+                <span class="muted" title={layer.source}>
+                  {meta ? `${formatInt(meta.width)} × ${formatInt(meta.height)} px${meta.alpha ? ' · transparent' : ''}` : 'nicht geladen'}
+                </span>
+                <button class="small" title="Bildebene entfernen" onClick={() => removeImageLayer(layer.id)}>
+                  ✕
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {!platform.mobile && (
+        <>
+          <Field label="Bild" hint="2:1, gleiche Ausdehnung wie die Heightmap; PNG mit Transparenz bleibt durchsichtig" wide>
+            <PathPicker value={path} onChange={setPath} title="Bildebene wählen" />
+          </Field>
+          <Field label="Name">
+            <Text value={name} placeholder="aus dem Dateinamen" onInput={setName} />
+          </Field>
+          <Check checked={crop} onChange={setCrop} label="Quadratischen Export: Mitte 2:1 ausschneiden" />
+          <div class="button-row">
+            <button
+              class="primary"
+              disabled={!path || !!busy.value}
+              onClick={async () => {
+                if (await importImageLayer(path, crop, name)) {
+                  setPath('')
+                  setName('')
+                }
+              }}
+            >
+              Bildebene hinzufügen
+            </button>
+          </div>
+        </>
+      )}
+      <p class="hint">
+        Vorgerenderte Kartenstile oder andere Bilder der ganzen Welt als eigene Ebenen. Reihenfolge, Deckkraft und Filter unter „Ebenen“; auf dem Globus unter „Oberfläche“ wählbar.
+      </p>
+    </>
+  )
+}
+
 const HEIGHT_OPTIONS = [
   { id: 'none' as const, name: 'nur Raster (≈10 km)' },
   { id: 'half' as const, name: 'halbe Auflösung' },
@@ -170,6 +230,7 @@ function Archive() {
       </Field>
       <Check checked={o.satellite} onChange={v => set({ satellite: v })} label="Satellitenbild mitnehmen" />
       <Check checked={o.koppen} onChange={v => set({ koppen: v })} label="Klimakarte mitnehmen" />
+      <Check checked={o.images} onChange={v => set({ images: v })} label={`Bildebenen mitnehmen (${p.imageLayers.length})`} />
       <div class="button-row">
         <button class="primary" disabled={!!busy.value} onClick={() => saveArchive()}>
           Archiv speichern …
@@ -442,9 +503,16 @@ export function ProjectPanel() {
         </Field>
       </Section>
       {platform.mobile ? (
-        <Section title="Gelände">
-          <TerrainInfo />
-        </Section>
+        <>
+          <Section title="Gelände">
+            <TerrainInfo />
+          </Section>
+          {p.imageLayers.length > 0 && (
+            <Section title="Bildebenen">
+              <ImageLayers />
+            </Section>
+          )}
+        </>
       ) : (
         <>
           <Section title="Heightmap (Gaea)">
@@ -452,6 +520,9 @@ export function ProjectPanel() {
           </Section>
           <Section title="Satellitenbild (Gaea)" open={false}>
             <SatelliteImport />
+          </Section>
+          <Section title="Bildebenen" open={false}>
+            <ImageLayers />
           </Section>
           <Section title="Kontrollpunkte" open={p.controlPoints.length === 0}>
             <ControlPoints />

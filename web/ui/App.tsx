@@ -1,9 +1,11 @@
 import { effect } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
+import logoUrl from '../assets/logo.svg'
+import { platform } from '../platform'
+import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
-import { clipVersion, koppen, satellite, terrain } from '../model/terrain'
+import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
 import type { LonLat } from '../model/types'
 import { Inspector } from './Inspector'
@@ -106,41 +108,90 @@ function useCompact() {
   return compact
 }
 
-function Header({ panel, setPanel, show3d }: { panel: Panel | null; setPanel: (p: Panel) => void; show3d: () => void }) {
+const PANELS: [Panel, string][] = [
+  ['layers', 'Ebenen'],
+  ['style', 'Stil'],
+  ['data', 'Daten'],
+  ['project', 'Projekt'],
+]
+
+/** minimise, maximise and close for the app's own title bar (desktop only) */
+function WindowControls() {
+  const controls = platform.window
+  const [maximized, setMaximized] = useState(false)
+  useEffect(() => {
+    if (!controls) return
+    const read = () => controls.isMaximized().then(setMaximized).catch(() => {})
+    read()
+    return controls.onResized(read)
+  }, [])
+  if (!controls) return null
+  const close = async () => {
+    if (dirty.value && !(await confirmDialog('Ungespeicherte Änderungen verwerfen und beenden?'))) return
+    controls.close()
+  }
+  return (
+    <div class="window-controls">
+      <button class="icon" title="Minimieren" aria-label="Minimieren" onClick={() => controls.minimize()}>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5h8" /></svg>
+      </button>
+      <button class="icon" title={maximized ? 'Wiederherstellen' : 'Maximieren'} aria-label={maximized ? 'Wiederherstellen' : 'Maximieren'} onClick={() => controls.toggleMaximize()}>
+        <svg viewBox="0 0 12 12" aria-hidden="true">
+          {maximized ? <path d="M3.5 4.5h4v4h-4zM5 4.5V3h4v4H7.5" /> : <path d="M2.5 2.5h7v7h-7z" />}
+        </svg>
+      </button>
+      <button class="icon close" title="Schließen" aria-label="Schließen" onClick={close}>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+      </button>
+    </div>
+  )
+}
+
+/**
+ * The title bar: logo and the panel tabs above the sidebar they switch, file actions on the right.
+ * On the desktop it replaces the system title bar; its empty parts move the window.
+ */
+function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; setPanel: (p: Panel) => void; show3d: () => void; tabsWidth: number | null }) {
   const [menu, setMenu] = useState(false)
   return (
-    <header class="app-header">
-      <div class="brand">Veil</div>
-      <div class="menu-anchor">
-        <button onClick={() => setMenu(!menu)}>Datei ▾</button>
-        {menu && <FileMenu onClose={() => setMenu(false)} />}
+    <header class="app-header" data-tauri-drag-region>
+      <div class="header-left" style={tabsWidth ? { width: `${tabsWidth}px` } : undefined} data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <span class="logo" style={{ maskImage: `url(${logoUrl})`, WebkitMaskImage: `url(${logoUrl})` }} aria-hidden="true" />
+          <span data-tauri-drag-region>VEIL</span>
+        </div>
+        <nav class="panel-tabs" aria-label="Seitenleiste">
+          {PANELS.map(([id, name]) => (
+            <button key={id} class={panel === id ? 'active' : ''} onClick={() => setPanel(id)}>
+              {name}
+            </button>
+          ))}
+        </nav>
       </div>
-      <button onClick={() => saveFile()} title="Speichern (Strg+S)" disabled={!dirty.value}>
-        💾
-      </button>
-      <button onClick={undo} disabled={!canUndo.value} title="Rückgängig (Strg+Z)">
-        ↶
-      </button>
-      <button onClick={redo} disabled={!canRedo.value} title="Wiederholen (Strg+Y)">
-        ↷
-      </button>
-      <span class="project-name">{project.value.name}</span>
-      <span class="spacer" />
-      <nav class="panel-tabs">
-        {([
-          ['layers', 'Ebenen'],
-          ['data', 'Daten'],
-          ['style', 'Stil'],
-          ['project', 'Projekt'],
-        ] as [Panel, string][]).map(([id, name]) => (
-          <button key={id} class={panel === id ? 'active' : ''} onClick={() => setPanel(id)}>
-            {name}
-          </button>
-        ))}
-      </nav>
-      <button onClick={show3d} title="3D-Gelände und Globus">
-        🌐 3D
-      </button>
+      <span class="project-name" data-tauri-drag-region>
+        {project.value.name}
+        {dirty.value ? ' •' : ''}
+      </span>
+      <span class="spacer" data-tauri-drag-region />
+      <div class="header-actions">
+        <div class="menu-anchor">
+          <button onClick={() => setMenu(!menu)}>Datei ▾</button>
+          {menu && <FileMenu onClose={() => setMenu(false)} />}
+        </div>
+        <button class="icon" onClick={() => saveFile()} title="Speichern (Strg+S)" disabled={!dirty.value}>
+          💾
+        </button>
+        <button class="icon" onClick={undo} disabled={!canUndo.value} title="Rückgängig (Strg+Z)">
+          ↶
+        </button>
+        <button class="icon" onClick={redo} disabled={!canRedo.value} title="Wiederholen (Strg+Y)">
+          ↷
+        </button>
+        <button onClick={show3d} title="3D-Gelände und Globus">
+          🌐 3D
+        </button>
+      </div>
+      <WindowControls />
     </header>
   )
 }
@@ -221,6 +272,11 @@ function useMap(container: { current: HTMLDivElement | null }) {
       }),
       effect(() => view.setKoppen(koppen.value, project.value.koppenClasses)),
       effect(() => view.setSatellite(satellite.value)),
+      // only the layers the project has (after an undo the tiles may still be loaded)
+      effect(() => {
+        const ids = new Set(project.value.imageLayers.map(l => l.id))
+        view.setImageLayers(new Map([...imageLayerData.value].filter(([id]) => ids.has(id))))
+      }),
       effect(() => {
         void clipVersion.value
         view.refreshAreas()
@@ -333,7 +389,7 @@ export function App() {
   }
   return (
     <div class={`app${compact ? ' compact' : ''}${compact && drawer ? ' drawer-open' : ''}`}>
-      <Header panel={compact && !drawer ? null : panel} setPanel={choosePanel} show3d={() => setShow3d(!show3d)} />
+      <Header panel={compact && !drawer ? null : panel} setPanel={choosePanel} show3d={() => setShow3d(!show3d)} tabsWidth={compact ? null : sidebarWidth} />
       <div class="workspace">
         {compact && drawer && <div class="drawer-scrim" onClick={() => setDrawer(false)} />}
         <aside class="sidebar" style={{ width: `${sidebarWidth}px` }}>

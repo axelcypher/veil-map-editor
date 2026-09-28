@@ -14,6 +14,7 @@ export function newProject(): Project {
     planetRadius: PLANET_RADIUS,
     terrain: null,
     satellite: null,
+    imageLayers: [],
     koppen: null,
     riverImport: null,
     controlPoints: [],
@@ -43,7 +44,7 @@ export function newProject(): Project {
   }
 }
 
-export const defaultArchiveOptions = (): Project['archive'] => ({ quality: 85, lossless: false, heights: 'none', satellite: true, koppen: true })
+export const defaultArchiveOptions = (): Project['archive'] => ({ quality: 85, lossless: false, heights: 'none', satellite: true, koppen: true, images: true })
 
 export const defaultGlobe = (): Project['globe'] => ({
   source: 'map',
@@ -176,7 +177,7 @@ export const KIND_NAMES: Record<EntityKind, [string, string]> = {
 /** fills in everything a file from an older or hand-edited version lacks */
 export function parseProject(text: string): Project {
   const data = JSON.parse(text) as Partial<Project> & { format?: string }
-  if (data.format !== 'veil-project') throw new Error('Keine Veil-Projektdatei.')
+  if (data.format !== 'veil-project') throw new Error('Keine VEIL-Projektdatei.')
   const fresh = newProject()
   const merged = { ...fresh, ...data } as Project
   merged.catalog = { ...fresh.catalog, ...data.catalog }
@@ -193,6 +194,10 @@ export function parseProject(text: string): Project {
     const below = fresh.layers.slice(0, index).reverse().find(l => layers.some(x => x.id === l.id))
     layers.splice(below ? layers.findIndex(l => l.id === below.id) + 1 : 0, 0, layer)
   })
+  // every image layer has its place in the stack, even in a hand-edited file
+  for (const image of merged.imageLayers) {
+    if (!layers.some(l => l.id === `img:${image.id}`)) layers.splice(layers.findIndex(l => l.id === 'satellite') + 1, 0, { id: `img:${image.id}`, visible: false, opacity: 1 })
+  }
   merged.layers = layers
   return merged
 }

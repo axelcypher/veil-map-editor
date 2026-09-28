@@ -15,6 +15,10 @@
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "@fontsource/aref-ruqaa-ink": "^5.3.0",
+    "@fontsource/cinzel": "^5.3.0",
+    "@fontsource/forum": "^5.3.0",
+    "@fontsource/marcellus": "^5.3.0",
     "@preact/signals": "^2.11.2",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",

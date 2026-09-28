@@ -49,6 +49,8 @@ export interface SatelliteMeta {
   maxZoom: number
   tileSize: number
   tileExt: string
+  /** the tiles carry transparency */
+  alpha?: boolean
   createdAt: number
 }
 
@@ -147,7 +149,7 @@ export interface Platform {
   openProject(path: string): Promise<OpenedProject>
   saveArchive(
     path: string,
-    content: { project: string; terrainId: string | null; koppenId: string | null; satelliteId: string | null },
+    content: { project: string; terrainId: string | null; koppenId: string | null; satelliteId: string | null; imageIds: string[] },
     options: ArchiveOptions,
   ): Promise<ArchiveReport>
   /** writes binary data the page made (globe images and animations) */
@@ -157,4 +159,16 @@ export interface Platform {
   vaultRead(root: string, path: string): Promise<string>
 
   onProgress(handler: (progress: Progress) => void): () => void
+
+  /** the app's own title bar replaces the system one on the desktop; absent elsewhere */
+  window?: WindowControls
+}
+
+export interface WindowControls {
+  minimize(): Promise<void>
+  toggleMaximize(): Promise<void>
+  close(): Promise<void>
+  isMaximized(): Promise<boolean>
+  /** calls back after every resize; returns the unsubscribe */
+  onResized(handler: () => void): () => void
 }

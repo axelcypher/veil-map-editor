@@ -1,5 +1,5 @@
 // Defaults for a new project: type lists, the Köppen legend, styles and presets.
-import type { Catalog, Display, Filter, KoppenClass, LayerId, LayerPreset, LayerSetting, LayerStyle, StylePreset } from './types'
+import type { BuiltinLayerId, Catalog, Display, Filter, KoppenClass, LayerId, LayerPreset, LayerSetting, LayerStyle, Project, StylePreset } from './types'
 
 const lighten = (hex: string, amount = 0.45) => {
   const value = parseInt(hex.slice(1), 16)
@@ -180,7 +180,7 @@ const style = (partial: Partial<LayerStyle>): LayerStyle => ({
   ...partial,
 })
 
-export const defaultStyle = (): Record<LayerId, LayerStyle> => ({
+export const defaultStyle = (): Record<BuiltinLayerId, LayerStyle> => ({
   relief: style({}),
   satellite: style({}),
   shade: style({}),
@@ -202,7 +202,7 @@ export const defaultStyle = (): Record<LayerId, LayerStyle> => ({
 })
 
 /** bottom to top */
-export const LAYER_NAMES: Record<LayerId, string> = {
+export const LAYER_NAMES: Record<BuiltinLayerId, string> = {
   relief: 'Relief (Höhenfarben)',
   satellite: 'Satellitenbild (Gaea)',
   coast: 'Landfläche und Küste',
@@ -221,6 +221,14 @@ export const LAYER_NAMES: Record<LayerId, string> = {
   labels: 'Beschriftungen',
   graticule: 'Gitter und Koordinaten',
   texture: 'Textur',
+}
+
+export const isImageLayer = (id: LayerId): id is `img:${string}` => id.startsWith('img:')
+
+/** display name of a layer; own image layers carry their own */
+export function layerName(p: Project, id: LayerId) {
+  if (isImageLayer(id)) return p.imageLayers.find(l => `img:${l.id}` === id)?.name || 'Bildebene'
+  return LAYER_NAMES[id]
 }
 
 export const defaultLayers = (): LayerSetting[] => [
@@ -272,9 +280,9 @@ export const defaultDisplay = (): Display => ({
   hiddenMarkerTypes: [],
 })
 
-const restyle = (changes: Partial<Record<LayerId, Partial<LayerStyle>>>) => {
+const restyle = (changes: Partial<Record<BuiltinLayerId, Partial<LayerStyle>>>) => {
   const base = defaultStyle()
-  for (const [id, partial] of Object.entries(changes)) Object.assign(base[id as LayerId], partial)
+  for (const [id, partial] of Object.entries(changes)) Object.assign(base[id as BuiltinLayerId], partial)
   return base
 }
 

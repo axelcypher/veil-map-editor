@@ -9,15 +9,18 @@ import {
   addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, tool,
   updateEntity, type Tool,
 } from './store'
-import { clearTerrain, islandAt, loadKoppenData, loadSatelliteData, loadTerrainData, koppen as koppenData, satellite as satelliteData, terrain } from './terrain'
+import {
+  clearTerrain, imageLayerData, islandAt, loadImageLayerData, loadKoppenData, loadSatelliteData, loadTerrainData, koppen as koppenData,
+  satellite as satelliteData, terrain,
+} from './terrain'
 import {
   AREA_KINDS, type AreaBase, type AreaGeometry, type AreaKind, type EntityKind, type KoppenMatch, type LineGeometry, type LonLat,
   type PointGeometry, type Project, type River,
 } from './types'
 
-export const PROJECT_FILTER = [{ name: 'Veil-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
-const SAVE_FILTER = [{ name: 'Veil-Projekt', extensions: ['veil'] }]
-export const ARCHIVE_FILTER = [{ name: 'Veil-Archiv mit Gelände', extensions: ['veilmap'] }]
+export const PROJECT_FILTER = [{ name: 'VEIL-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
+const SAVE_FILTER = [{ name: 'VEIL-Projekt', extensions: ['veil'] }]
+export const ARCHIVE_FILTER = [{ name: 'VEIL-Archiv mit Gelände', extensions: ['veilmap'] }]
 /** the open file is a .veilmap archive; saving writes the archive again */
 export const fileIsArchive = signal(false)
 export const IMAGE_FILTER = [{ name: 'Raster', extensions: ['tif', 'tiff', 'png', 'r16', 'raw', 'jpg', 'jpeg', 'webp'] }]
@@ -46,6 +49,7 @@ function clearRasters() {
   clearTerrain()
   koppenData.value = null
   satelliteData.value = null
+  imageLayerData.value = new Map()
   conflicts.value = []
 }
 
@@ -99,6 +103,21 @@ async function restoreRasters(p: Project) {
       else notify(`Satellitenbild nicht gefunden: ${p.satellite.source}`, 'error')
     }
   }
+  for (const layer of p.imageLayers) {
+    try {
+      await loadImageLayerData(layer.id)
+    } catch {
+      // the cache is gone: tile the source again, under the same id (same file, same crop)
+      if (await platform.fileExists(layer.source)) {
+        try {
+          await withBusy(`Bildebene „${layer.name}“ kacheln`, () => platform.importSatellite({ path: layer.source, cropSquare: layer.cropSquare }))
+          await loadImageLayerData(layer.id)
+        } catch (error) {
+          notify(`Bildebene „${layer.name}“: ${error}`, 'error')
+        }
+      } else notify(`Bildebene „${layer.name}“ nicht gefunden: ${layer.source}`, 'error')
+    }
+  }
 }
 
 export async function saveFile(saveAs = false) {
@@ -146,6 +165,7 @@ export async function saveArchive(pick = true) {
           terrainId: terrain.value ? (p.terrain?.id ?? null) : null,
           koppenId: options.koppen && koppenData.value ? (p.koppen?.id ?? null) : null,
           satelliteId: options.satellite && satelliteData.value ? (p.satellite?.id ?? null) : null,
+          imageIds: options.images ? p.imageLayers.map(l => l.id).filter(id => imageLayerData.value.has(id)) : [],
         },
         options,
       ),
@@ -234,6 +254,51 @@ export async function importSatellite(path: string, cropSquare: boolean) {
     notify(`Satellitenbild: ${error}`, 'error')
     return null
   }
+}
+
+/**
+ * Adds a picture of the whole planet as its own layer, e.g. a pre-rendered map style. It goes in
+ * above the satellite picture and the other image layers and is switched on.
+ */
+export async function importImageLayer(path: string, cropSquare: boolean, name: string) {
+  try {
+    const meta = await withBusy('Bildebene kacheln', () => platform.importSatellite({ path, cropSquare }))
+    const p = project.value
+    const id: `img:${string}` = `img:${meta.id}`
+    const label = name.trim() || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'Bildebene'
+    const known = p.imageLayers.some(l => l.id === meta.id)
+    const imageLayers = known
+      ? p.imageLayers.map(l => (l.id === meta.id ? { ...l, name: label, source: path } : l))
+      : [...p.imageLayers, { id: meta.id, name: label, source: path, hash: meta.hash, cropSquare, importedAt: Date.now() }]
+    let layers = p.layers.filter(l => l.id !== id)
+    const below = layers.reduce((last, l, i) => (l.id === 'satellite' || l.id.startsWith('img:') ? i : last), layers.findIndex(l => l.id === 'relief'))
+    layers = [...layers.slice(0, below + 1), { id, visible: true, opacity: 1 }, ...layers.slice(below + 1)]
+    commit({ ...p, imageLayers, layers })
+    await loadImageLayerData(meta.id)
+    notify(known ? `Bildebene „${label}“ neu eingelesen.` : `Bildebene „${label}“ hinzugefügt.`, 'ok')
+    return meta
+  } catch (error) {
+    notify(`Bildebene: ${error}`, 'error')
+    return null
+  }
+}
+
+/**
+ * Takes the layer out of the project. Its tiles stay loaded (an undo brings it straight back) and
+ * its cache stays for a later import of the same file.
+ */
+export function removeImageLayer(cacheId: string) {
+  const p = project.value
+  const id = `img:${cacheId}`
+  const layerFilters = { ...p.display.layerFilters }
+  delete layerFilters[id as `img:${string}`]
+  commit({
+    ...p,
+    imageLayers: p.imageLayers.filter(l => l.id !== cacheId),
+    layers: p.layers.filter(l => l.id !== id),
+    display: { ...p.display, layerFilters },
+    globe: p.globe.source === id ? { ...p.globe, source: 'map' } : p.globe,
+  })
 }
 
 export function koppenPalette(p: Project): KoppenMatch[] {

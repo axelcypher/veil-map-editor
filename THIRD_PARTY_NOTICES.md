@@ -13,6 +13,7 @@
 | [gifenc](https://github.com/mattdesl/gifenc) | MIT | GIF-Animationen des Globus |
 | [webp](https://github.com/jaredforth/webp) mit [libwebp](https://chromium.googlesource.com/webm/libwebp) | MIT / Apache-2.0, libwebp BSD-3-Clause | Kacheln im Archiv als WebP |
 | [zip](https://github.com/zip-rs/zip2) | MIT | `.veilmap`-Archiv |
+| Schriften [Cinzel](https://fonts.google.com/specimen/Cinzel), [Forum](https://fonts.google.com/specimen/Forum), [Marcellus](https://fonts.google.com/specimen/Marcellus), [Aref Ruqaa Ink](https://fonts.google.com/specimen/Aref+Ruqaa+Ink) über Fontsource | SIL Open Font License 1.1 | Kartenbeschriftung, Oberfläche, VEIL-Schriftzug |
 
 ## Vorlagen und Werte
 

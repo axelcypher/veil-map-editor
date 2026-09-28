@@ -2,7 +2,7 @@
 // its settings and the picture and animation exports.
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { busy, notify, patchProject, project } from '../model/store'
-import { gridHeight, satellite, terrain, type TerrainState } from '../model/terrain'
+import { gridHeight, imageLayerData, satellite, terrain, type TerrainState } from '../model/terrain'
 import type { GlobeOptions } from '../model/types'
 import { platform } from '../platform'
 import { slopeTexture } from '../view3d/globe'
@@ -69,6 +69,11 @@ function slopeFromTerrain() {
 
 async function worldPicture(source: GlobeOptions['source']) {
   const view = mapView.current!
+  if (source.startsWith('img:')) {
+    if (imageLayerData.value.has(source.slice(4))) return view.renderWorld(4096, [source as `img:${string}`])
+    notify('Diese Bildebene ist nicht geladen – der Globus zeigt die Karte.')
+    return view.renderWorld(4096)
+  }
   if (source === 'satellite' && !satellite.value) {
     notify('Kein Satellitenbild importiert – der Globus zeigt die Karte.')
     return view.renderWorld(4096)
@@ -127,7 +132,11 @@ function GlobeSettings({ viewer }: { viewer: Viewer | null }) {
     <div class="globe-settings">
       <h4>Bild</h4>
       <Field label="Oberfläche">
-        <Select value={g.source} onChange={v => set({ source: v })} options={SOURCES} />
+        <Select
+          value={g.source}
+          onChange={v => set({ source: v })}
+          options={[...SOURCES, ...project.value.imageLayers.map(l => ({ id: `img:${l.id}` as const, name: `Bildebene: ${l.name}` }))]}
+        />
       </Field>
       <Field label="Relief">
         <Range value={g.relief} min={0} max={4} step={0.1} onChange={v => set({ relief: v })} />
