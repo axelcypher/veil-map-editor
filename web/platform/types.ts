@@ -1,7 +1,7 @@
 // The adapter layer from the vault note: all editing logic lives in the page; file access and the
 // heavy raster work go through this interface. Desktop uses Tauri/Rust, a web build can use uploads,
 // downloads and the Obsidian "Local REST API" plugin.
-import type { ControlPoint, KoppenMatch } from '../model/types'
+import type { ArchiveOptions, ControlPoint, KoppenMatch } from '../model/types'
 
 export interface Check {
   label: string
@@ -33,6 +33,39 @@ export interface TerrainMeta {
   maxM: number
   seaFraction: number
   createdAt: number
+  /** 'png' from an import, 'webp' when unpacked from an archive */
+  tileExt: string
+  /** false: only the ≈10 km grid came along in an archive */
+  fullHeights: boolean
+}
+
+export interface SatelliteMeta {
+  id: string
+  source: string
+  hash: string
+  width: number
+  height: number
+  cropSquare: boolean
+  maxZoom: number
+  tileSize: number
+  tileExt: string
+  createdAt: number
+}
+
+export interface ArchiveReport {
+  bytes: number
+  tiles: number
+  tileBytes: number
+  heightsBytes: number
+  fullHeights: boolean
+}
+
+export interface OpenedProject {
+  /** the .veil JSON */
+  project: string
+  /** it came from a .veilmap archive, whose rasters are now in the cache */
+  archive: boolean
+  unpacked: string[]
 }
 
 export interface ImportReport {
@@ -107,6 +140,16 @@ export interface Platform {
   importRivers(options: { path: string; threshold: number; minLengthKm: number; simplifyPx: number; cropSquare: boolean }, radiusM: number): Promise<RiverResult>
   importKoppen(options: { path: string; palette: KoppenMatch[]; tolerance: number; cropSquare: boolean }): Promise<KoppenMeta>
   koppenHistogram(path: string): Promise<[string, number][]>
+  importSatellite(options: { path: string; cropSquare: boolean }): Promise<SatelliteMeta>
+  /** reads a .veil, or unpacks a .veilmap into the cache */
+  openProject(path: string): Promise<OpenedProject>
+  saveArchive(
+    path: string,
+    content: { project: string; terrainId: string | null; koppenId: string | null; satelliteId: string | null },
+    options: ArchiveOptions,
+  ): Promise<ArchiveReport>
+  /** writes binary data the page made (globe images and animations) */
+  writeBinary(path: string, data: Uint8Array): Promise<void>
 
   vaultList(root: string): Promise<VaultNote[]>
   vaultRead(root: string, path: string): Promise<string>

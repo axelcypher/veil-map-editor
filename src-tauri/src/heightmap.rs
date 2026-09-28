@@ -2,6 +2,7 @@
 // the editor shows from it (tiles, a coarse grid, coast polygons). The terrain itself is read-only.
 use crate::coast;
 use crate::raster::{self, Gray16, SourceInfo};
+use crate::tiles::{self, write_png_rgb, TILE};
 use image::{GrayImage, ImageEncoder, RgbImage};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub const TILE: usize = 256;
 pub const GRID_WIDTH: usize = 4096;
 pub const COAST_WIDTH: usize = 8192;
 
@@ -103,6 +103,25 @@ pub struct TerrainMeta {
     pub max_m: f32,
     pub sea_fraction: f32,
     pub created_at: u64,
+    /// file type of the tiles: png in an import cache, webp when unpacked from an archive
+    #[serde(default = "png")]
+    pub tile_ext: String,
+    /// false when only the coarse grid came along (an archive without full heights)
+    #[serde(default = "yes")]
+    pub full_heights: bool,
+    /// size of heights.u16 when it differs from the source (halved for an archive)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heights_width: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heights_height: Option<usize>,
+}
+
+fn png() -> String {
+    "png".into()
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Serialize, Debug)]
@@ -292,8 +311,7 @@ fn resample_u16(source: &Heightmap, width: usize, height: usize) -> Vec<u16> {
         let lat = 90.0 - (y as f64 + 0.5) / height as f64 * 180.0;
         for (x, value) in row.iter_mut().enumerate() {
             let lon = (x as f64 + 0.5) / width as f64 * 360.0 - 180.0;
-            let m = source.sample(lon, lat);
-            *value = ((m + 16384.0) * 65535.0 / 32768.0).round().clamp(0.0, 65535.0) as u16;
+            *value = encode(source.sample(lon, lat));
         }
     });
     out
@@ -351,18 +369,6 @@ fn hillshade(level: &Level, x: isize, y: isize, dx: f32, dy: f32, exaggeration: 
     let zenith = 45f32.to_radians();
     let azimuth = 135f32.to_radians(); // 315° compass in the maths convention
     (zenith.cos() * slope.cos() + zenith.sin() * slope.sin() * (azimuth - aspect).cos()).max(0.0)
-}
-
-fn write_png_rgb(path: &Path, image: &RgbImage) -> Result<(), String> {
-    let file = fs::File::create(path).map_err(|e| e.to_string())?;
-    let encoder = image::codecs::png::PngEncoder::new_with_quality(
-        std::io::BufWriter::new(file),
-        image::codecs::png::CompressionType::Fast,
-        image::codecs::png::FilterType::Sub,
-    );
-    encoder
-        .write_image(image.as_raw(), image.width(), image.height(), image::ExtendedColorType::Rgb8)
-        .map_err(|e| e.to_string())
 }
 
 fn write_png_gray(path: &Path, image: &GrayImage) -> Result<(), String> {
@@ -446,9 +452,12 @@ pub fn build_cache(
     let id = format!("{hash}{}", if options.crop_square { "-c" } else { "" });
     let dir = cache_dir(cache_root, &id);
     let meta_path = dir.join("meta.json");
-    if let Ok(text) = fs::read_to_string(&meta_path) {
-        if let Ok(meta) = serde_json::from_str::<TerrainMeta>(&text) {
-            return Ok(meta);
+    // an original import is reused; a cache unpacked from an archive is rebuilt at full quality
+    if !dir.join(crate::archive::STAMP).exists() {
+        if let Ok(text) = fs::read_to_string(&meta_path) {
+            if let Ok(meta) = serde_json::from_str::<TerrainMeta>(&text) {
+                return Ok(meta);
+            }
         }
     }
     let _ = fs::remove_dir_all(&dir);
@@ -462,10 +471,7 @@ pub fn build_cache(
     }
 
     // the pyramid: level z is 512·2^z px wide; the top level has at least the source resolution
-    let mut max_zoom = 0u32;
-    while 512usize << max_zoom < map.width && max_zoom < 7 {
-        max_zoom += 1;
-    }
+    let max_zoom = tiles::max_zoom_for(map.width);
     let top_width = 512usize << max_zoom;
     let resampled;
     let top_raw: &[u16] = if top_width == map.width {
@@ -533,6 +539,10 @@ pub fn build_cache(
         max_m: meters(s.raw_max),
         sea_fraction: s.sea_fraction,
         created_at: now_secs(),
+        tile_ext: png(),
+        full_heights: true,
+        heights_width: None,
+        heights_height: None,
     };
     fs::write(&meta_path, serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     progress("Fertig", 1.0);
@@ -545,10 +555,31 @@ pub fn load_cached(cache_root: &Path, id: &str) -> Result<(TerrainMeta, Heightma
         &fs::read_to_string(dir.join("meta.json")).map_err(|_| "Kein Cache für dieses Gelände vorhanden.".to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    let bytes = fs::read(dir.join("heights.u16")).map_err(|e| e.to_string())?;
-    if bytes.len() != meta.width * meta.height * 2 {
+    if let Ok(bytes) = fs::read(dir.join("heights.u16")) {
+        let (width, height) = (meta.heights_width.unwrap_or(meta.width), meta.heights_height.unwrap_or(meta.height));
+        if bytes.len() != width * height * 2 {
+            return Err("Der Gelände-Cache ist unvollständig.".into());
+        }
+        let data = bytes.chunks_exact(2).map(|p| u16::from_le_bytes([p[0], p[1]])).collect();
+        return Ok((meta.clone(), Heightmap { width, height, data }));
+    }
+    if meta.full_heights {
         return Err("Der Gelände-Cache ist unvollständig.".into());
     }
-    let data = bytes.chunks_exact(2).map(|p| u16::from_le_bytes([p[0], p[1]])).collect();
-    Ok((meta.clone(), Heightmap { width: meta.width, height: meta.height, data }))
+    // without the full heights the coarse grid (≈10 km) answers height queries
+    let bytes = fs::read(dir.join("grid.i16")).map_err(|_| "Der Gelände-Cache ist unvollständig.".to_string())?;
+    if bytes.len() != meta.grid_width * meta.grid_height * 2 {
+        return Err("Der Gelände-Cache ist unvollständig.".into());
+    }
+    let data = bytes
+        .chunks_exact(2)
+        .map(|p| encode(i16::from_le_bytes([p[0], p[1]]) as f32))
+        .collect();
+    Ok((meta.clone(), Heightmap { width: meta.grid_width, height: meta.grid_height, data }))
+}
+
+/// metres back to the file value, the inverse of `meters`
+#[inline]
+pub fn encode(m: f32) -> u16 {
+    ((m + 16384.0) * 65535.0 / 32768.0).round().clamp(0.0, 65535.0) as u16
 }

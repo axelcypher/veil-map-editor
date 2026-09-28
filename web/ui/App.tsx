@@ -1,9 +1,9 @@
 import { effect } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveFile } from '../model/actions'
+import { confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
-import { clipVersion, koppen, terrain } from '../model/terrain'
+import { clipVersion, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
 import type { LonLat } from '../model/types'
 import { Inspector } from './Inspector'
@@ -80,6 +80,9 @@ function FileMenu({ onClose }: { onClose: () => void }) {
       <button onClick={() => { onClose(); openFile() }}>Öffnen …</button>
       <button onClick={() => { onClose(); saveFile() }}>Speichern</button>
       <button onClick={() => { onClose(); saveFile(true) }}>Speichern unter …</button>
+      <button onClick={() => { onClose(); saveArchive() }} title="Projekt mit Gelände, Klima und Satellitenbild in einer Datei, z. B. für das Tablet">
+        Als Archiv speichern (.veilmap) …
+      </button>
       {recentFiles.value.length > 0 && <hr />}
       {recentFiles.value.map(path => (
         <button key={path} class="recent" title={path} onClick={() => { onClose(); openFile(path) }}>
@@ -204,6 +207,7 @@ function useMap(container: { current: HTMLDivElement | null }) {
         view.setLand(t?.land ?? null)
       }),
       effect(() => view.setKoppen(koppen.value, project.value.koppenClasses)),
+      effect(() => view.setSatellite(satellite.value)),
       effect(() => {
         void clipVersion.value
         view.refreshAreas()

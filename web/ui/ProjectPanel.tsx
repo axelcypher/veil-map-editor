@@ -1,13 +1,13 @@
 // Project settings, the three imports (heightmap, rivers, climate), control points, the Obsidian
 // vault and the exports.
 import { useState } from 'preact/hooks'
-import { IMAGE_FILTER, importKoppen, importRivers, importTerrain, lastReport } from '../model/actions'
+import { IMAGE_FILTER, importKoppen, importRivers, importSatellite, importTerrain, lastArchive, lastReport, saveArchive } from '../model/actions'
 import { EXPORT_LAYERS, exportGeoJson, exportJson } from '../model/export'
 import { formatInt, formatLonLat } from '../model/geo'
 import { refreshVault, vaultError, vaultNotes } from '../model/obsidian'
 import { KIND_NAMES, newId } from '../model/project'
 import { busy, commit, patchProject, project, tool } from '../model/store'
-import { koppen, terrain } from '../model/terrain'
+import { koppen, satellite, terrain } from '../model/terrain'
 import type { ControlPoint, EntityKind, KoppenClass } from '../model/types'
 import { platform } from '../platform'
 import { Check, Field, Num, Section, Select, Text } from './components'
@@ -85,6 +85,91 @@ function TerrainImport() {
         Gelände ist im Editor schreibgeschützt. Relief ändern heißt: zurück nach Photoshop bzw. Gaea und neu importieren. Alle Inhalte hängen an Koordinaten und bleiben erhalten.
       </p>
       <Report />
+    </>
+  )
+}
+
+function SatelliteImport() {
+  const p = project.value
+  const [path, setPath] = useState(p.satellite?.source ?? '')
+  const [crop, setCrop] = useState(p.satellite?.cropSquare ?? false)
+  const s = satellite.value
+  return (
+    <>
+      {s && (
+        <dl class="stats">
+          <dt>Datei</dt>
+          <dd title={s.source}>{s.source.split(/[\\/]/).pop()}</dd>
+          <dt>Größe</dt>
+          <dd>
+            {formatInt(s.width)} × {formatInt(s.height)} px
+          </dd>
+        </dl>
+      )}
+      <Field label="Farbbild" hint="Gaea-Farbexport (Satellit/Textur), 2:1, gleiche Ausdehnung wie die Heightmap" wide>
+        <PathPicker value={path} onChange={setPath} title="Satellitenbild aus Gaea" />
+      </Field>
+      <Check checked={crop} onChange={setCrop} label="Quadratischen Gaea-Export: Mitte 2:1 ausschneiden" />
+      <div class="button-row">
+        <button class="primary" disabled={!path || !!busy.value} onClick={() => importSatellite(path, crop)}>
+          {p.satellite ? 'Neu importieren' : 'Importieren'}
+        </button>
+      </div>
+      <p class="hint">Erscheint als Ebene „Satellitenbild“ (Preset „Satellit“) und lässt sich auf den Globus legen. Nur Anzeige – das Gelände selbst kommt weiter aus der Heightmap.</p>
+    </>
+  )
+}
+
+const HEIGHT_OPTIONS = [
+  { id: 'none' as const, name: 'nur Raster (≈10 km)' },
+  { id: 'half' as const, name: 'halbe Auflösung' },
+  { id: 'full' as const, name: 'volle Auflösung' },
+]
+
+function Archive() {
+  const p = project.value
+  const o = p.archive
+  const set = (patch: Partial<typeof o>) => patchProject({ archive: { ...o, ...patch } }, 'archive')
+  const report = lastArchive.value
+  const mb = (bytes: number) => `${(bytes / 1e6).toFixed(1).replace('.', ',')} MB`
+  return (
+    <>
+      <p class="hint">
+        Eine Datei mit Projekt und allem, was aus den Quelldateien abgeleitet wurde – zum Weitergeben, etwa an das Tablet. Importiert wird am PC; das Archiv braucht die Quelldateien nicht.
+      </p>
+      <Field label="Kachelqualität" hint="WebP; 85 ist vom Original kaum zu unterscheiden">
+        <span class="inline">
+          <input type="range" min={50} max={100} step={1} value={o.quality} disabled={o.lossless} onInput={e => set({ quality: Number((e.target as HTMLInputElement).value) })} />
+          <span class="muted">{o.lossless ? 'verlustfrei' : o.quality}</span>
+        </span>
+      </Field>
+      <Check checked={o.lossless} onChange={v => set({ lossless: v })} label="Kacheln verlustfrei (deutlich größer)" />
+      <Field label="Exakte Höhen" hint="für Punktinfo und Konfliktprüfung; das Raster ist immer dabei">
+        <Select value={o.heights} onChange={v => set({ heights: v })} options={HEIGHT_OPTIONS} />
+      </Field>
+      <Check checked={o.satellite} onChange={v => set({ satellite: v })} label="Satellitenbild mitnehmen" />
+      <Check checked={o.koppen} onChange={v => set({ koppen: v })} label="Klimakarte mitnehmen" />
+      <div class="button-row">
+        <button class="primary" disabled={!!busy.value} onClick={() => saveArchive()}>
+          Archiv speichern …
+        </button>
+      </div>
+      {report && (
+        <dl class="stats">
+          <dt>Archiv</dt>
+          <dd>{mb(report.bytes)}</dd>
+          <dt>Kacheln</dt>
+          <dd>
+            {formatInt(report.tiles)} · {mb(report.tileBytes)}
+          </dd>
+          {report.heightsBytes > 0 && (
+            <>
+              <dt>Höhen</dt>
+              <dd>{mb(report.heightsBytes)}</dd>
+            </>
+          )}
+        </dl>
+      )}
     </>
   )
 }
@@ -337,6 +422,9 @@ export function ProjectPanel() {
       <Section title="Heightmap (Gaea)">
         <TerrainImport />
       </Section>
+      <Section title="Satellitenbild (Gaea)" open={false}>
+        <SatelliteImport />
+      </Section>
       <Section title="Kontrollpunkte" open={p.controlPoints.length === 0}>
         <ControlPoints />
       </Section>
@@ -351,6 +439,9 @@ export function ProjectPanel() {
       </Section>
       <Section title="Export" open={false}>
         <Export />
+      </Section>
+      <Section title="Archiv (.veilmap)" open={false}>
+        <Archive />
       </Section>
     </div>
   )

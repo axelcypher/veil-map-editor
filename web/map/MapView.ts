@@ -28,7 +28,7 @@ import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKi
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
 import { shownGeometry } from '../model/terrain'
-import type { KoppenMeta, TerrainMeta } from '../platform'
+import type { KoppenMeta, SatelliteMeta, TerrainMeta } from '../platform'
 import { platform } from '../platform'
 import { entityStyle, hexToRgb, SELECT_COLOR, type StyleContext } from './styles'
 import { textureUrl } from './texture'
@@ -79,6 +79,25 @@ function fromOl(geometry: Geometry): Entity['geometry'] {
 export const filterCss = (f: Filter | undefined) =>
   !f ? '' : `grayscale(${f.grayscale}) sepia(${f.sepia}) saturate(${f.saturate}) brightness(${f.brightness}) contrast(${f.contrast}) hue-rotate(${f.hue}deg) blur(${f.blur}px) invert(${f.invert})`
 
+/** a tile pyramid from the cache: level z is 512·2^z px wide */
+function tileSource(meta: { maxZoom: number; tileSize: number; tileExt?: string }, path: string) {
+  const ext = meta.tileExt || 'png'
+  return new TileImage({
+    projection: 'EPSG:4326',
+    // tiles come from the veil:// protocol, another origin; without this the 3D view cannot read the map
+    crossOrigin: 'anonymous',
+    tileGrid: new TileGrid({
+      extent: EXTENT,
+      origin: [-180, 90],
+      resolutions: Array.from({ length: meta.maxZoom + 1 }, (_, z) => BASE_RESOLUTION / 2 ** z),
+      tileSize: meta.tileSize,
+    }),
+    wrapX: false,
+    interpolate: true,
+    tileUrlFunction: ([z, x, y]) => platform.cacheUrl(`${path}/${z}/${x}/${y}.${ext}`),
+  })
+}
+
 export class MapView {
   readonly map: OlMap
   readonly layers = {} as Record<LayerId, BaseLayer>
@@ -123,6 +142,7 @@ export class MapView {
 
     // terrain tiles come later, in setTerrain
     this.layers.relief = new TileLayer({ className: 'layer-relief' })
+    this.layers.satellite = new TileLayer({ className: 'layer-satellite' })
     this.layers.shade = new TileLayer({ className: 'layer-shade' })
     this.layers.coast = new VectorLayer({ className: 'layer-coast', source: this.coastSource, style: () => this.coastStyle() })
     this.layers.koppen = new ImageLayer({ className: 'layer-koppen' })
@@ -207,24 +227,12 @@ export class MapView {
       this.coastSource.clear()
       return
     }
-    const grid = new TileGrid({
-      extent: EXTENT,
-      origin: [-180, 90],
-      resolutions: Array.from({ length: meta.maxZoom + 1 }, (_, z) => BASE_RESOLUTION / 2 ** z),
-      tileSize: meta.tileSize,
-    })
-    const source = (kind: string) =>
-      new TileImage({
-        projection: 'EPSG:4326',
-        // tiles come from the veil:// protocol, another origin; without this the 3D view cannot read the map
-        crossOrigin: 'anonymous',
-        tileGrid: grid,
-        wrapX: false,
-        interpolate: true,
-        tileUrlFunction: ([z, x, y]) => platform.cacheUrl(`terrain/${meta.id}/tiles/${kind}/${z}/${x}/${y}.png`),
-      })
-    relief.setSource(source('relief'))
-    shade.setSource(source('shade'))
+    relief.setSource(tileSource(meta, `terrain/${meta.id}/tiles/relief`))
+    shade.setSource(tileSource(meta, `terrain/${meta.id}/tiles/shade`))
+  }
+
+  setSatellite(meta: SatelliteMeta | null) {
+    ;(this.layers.satellite as TileLayer<TileImage>).setSource(meta ? tileSource(meta, `satellite/${meta.id}/tiles`) : null)
   }
 
   setLand(land: AreaGeometry | null) {

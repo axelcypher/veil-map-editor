@@ -9,13 +9,17 @@ import {
   addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, tool,
   updateEntity, type Tool,
 } from './store'
-import { clearTerrain, islandAt, loadKoppenData, loadTerrainData, koppen as koppenData, terrain } from './terrain'
+import { clearTerrain, islandAt, loadKoppenData, loadSatelliteData, loadTerrainData, koppen as koppenData, satellite as satelliteData, terrain } from './terrain'
 import {
   AREA_KINDS, type AreaBase, type AreaGeometry, type AreaKind, type EntityKind, type KoppenMatch, type LineGeometry, type LonLat,
   type PointGeometry, type Project, type River,
 } from './types'
 
-export const PROJECT_FILTER = [{ name: 'Veil-Projekt', extensions: ['veil'] }]
+export const PROJECT_FILTER = [{ name: 'Veil-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
+const SAVE_FILTER = [{ name: 'Veil-Projekt', extensions: ['veil'] }]
+export const ARCHIVE_FILTER = [{ name: 'Veil-Archiv mit Gelände', extensions: ['veilmap'] }]
+/** the open file is a .veilmap archive; saving writes the archive again */
+export const fileIsArchive = signal(false)
 export const IMAGE_FILTER = [{ name: 'Raster', extensions: ['tif', 'tiff', 'png', 'r16', 'raw', 'jpg', 'jpeg', 'webp'] }]
 
 export interface Conflict {
@@ -33,10 +37,16 @@ export const lastReport = signal<ImportReport | null>(null)
 export async function newFile() {
   if (dirty.value && !(await confirmDiscard())) return
   await platform.closeTerrain()
+  clearRasters()
+  fileIsArchive.value = false
+  resetProject(newProject(), null)
+}
+
+function clearRasters() {
   clearTerrain()
   koppenData.value = null
+  satelliteData.value = null
   conflicts.value = []
-  resetProject(newProject(), null)
 }
 
 export const confirmRequest = signal<{ text: string; resolve: (ok: boolean) => void } | null>(null)
@@ -48,11 +58,11 @@ export async function openFile(path?: string) {
   const chosen = path ?? (await platform.pickFile('Projekt öffnen', PROJECT_FILTER))
   if (!chosen) return
   try {
-    const next = parseProject(await platform.readText(chosen))
+    const opened = await withBusy('Projekt öffnen', () => platform.openProject(chosen))
+    const next = parseProject(opened.project)
     await platform.closeTerrain()
-    clearTerrain()
-    koppenData.value = null
-    conflicts.value = []
+    clearRasters()
+    fileIsArchive.value = opened.archive
     resetProject(next, chosen)
     rememberRecent(chosen)
     await restoreRasters(next)
@@ -81,23 +91,74 @@ async function restoreRasters(p: Project) {
       if (await platform.fileExists(p.koppen.source)) await importKoppen(p.koppen.source, p.koppen.cropSquare, p.koppen.tolerance)
     }
   }
+  if (p.satellite) {
+    try {
+      await loadSatelliteData(p.satellite.id)
+    } catch {
+      if (await platform.fileExists(p.satellite.source)) await importSatellite(p.satellite.source, p.satellite.cropSquare)
+      else notify(`Satellitenbild nicht gefunden: ${p.satellite.source}`, 'error')
+    }
+  }
 }
 
 export async function saveFile(saveAs = false) {
+  if (fileIsArchive.value && !saveAs && filePath.value && !filePath.value.startsWith('upload:')) return saveArchive(false)
   let path = filePath.value
-  if (!path || saveAs || path.startsWith('upload:')) {
-    path = await platform.pickSavePath('Projekt speichern', `${project.value.name || 'karte'}.veil`, PROJECT_FILTER)
+  if (!path || saveAs || fileIsArchive.value || path.startsWith('upload:')) {
+    path = await platform.pickSavePath('Projekt speichern', `${project.value.name || 'karte'}.veil`, SAVE_FILTER)
     if (!path) return false
   }
   try {
     await platform.writeText(path, serializeProject(project.value))
     filePath.value = path
+    fileIsArchive.value = false
     dirty.value = false
     rememberRecent(path)
     notify('Gespeichert', 'ok')
     return true
   } catch (error) {
     notify(`Speichern fehlgeschlagen: ${error}`, 'error')
+    return false
+  }
+}
+
+const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1).replace('.', ',')} MB`
+export const lastArchive = signal<import('../platform').ArchiveReport | null>(null)
+
+/**
+ * The project with everything derived from its sources, as one .veilmap file for another device.
+ * `pick`: ask for a target even when the open file already is an archive.
+ */
+export async function saveArchive(pick = true) {
+  const p = project.value
+  let path = filePath.value
+  if (pick || !path || !fileIsArchive.value) {
+    path = await platform.pickSavePath('Als Archiv speichern', `${p.name || 'karte'}.veilmap`, ARCHIVE_FILTER)
+    if (!path) return false
+  }
+  const options = p.archive
+  try {
+    const report = await withBusy('Archiv schreiben', () =>
+      platform.saveArchive(
+        path,
+        {
+          project: serializeProject(p),
+          terrainId: terrain.value ? (p.terrain?.id ?? null) : null,
+          koppenId: options.koppen && koppenData.value ? (p.koppen?.id ?? null) : null,
+          satelliteId: options.satellite && satelliteData.value ? (p.satellite?.id ?? null) : null,
+        },
+        options,
+      ),
+    )
+    lastArchive.value = report
+    filePath.value = path
+    fileIsArchive.value = true
+    dirty.value = false
+    rememberRecent(path)
+    notify(`Archiv gespeichert: ${megabytes(report.bytes)} (${report.tiles} Kacheln ${megabytes(report.tileBytes)}${report.heightsBytes ? `, Höhen ${megabytes(report.heightsBytes)}` : ''})`, 'ok')
+    return true
+  } catch (error) {
+    notify(`Archiv speichern fehlgeschlagen: ${error}`, 'error')
     return false
   }
 }
@@ -157,6 +218,22 @@ export async function importTerrain(path: string, cropSquare: boolean) {
   if (reimport) notify(found.length ? `Neues Gelände geladen – ${found.length} Konflikte gefunden.` : 'Neues Gelände geladen, keine Konflikte.', found.length ? 'error' : 'ok')
   else notify('Heightmap importiert.', 'ok')
   return report
+}
+
+export async function importSatellite(path: string, cropSquare: boolean) {
+  try {
+    const meta = await withBusy('Satellitenbild kacheln', () => platform.importSatellite({ path, cropSquare }))
+    patchProject({ satellite: { source: path, id: meta.id, hash: meta.hash, cropSquare, importedAt: Date.now() } })
+    satelliteData.value = meta
+    const p = project.value
+    // a fresh import is meant to be seen
+    if (!p.layers.find(l => l.id === 'satellite')?.visible) patchProject({ layers: p.layers.map(l => (l.id === 'satellite' ? { ...l, visible: true } : l)) })
+    notify('Satellitenbild importiert.', 'ok')
+    return meta
+  } catch (error) {
+    notify(`Satellitenbild: ${error}`, 'error')
+    return null
+  }
 }
 
 export function koppenPalette(p: Project): KoppenMatch[] {

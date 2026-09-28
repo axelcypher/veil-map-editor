@@ -37,6 +37,14 @@ export const tauriPlatform: Platform = {
   importRivers: (options, radiusM) => invoke('rivers_import', { options: { ...options, prunePx: 4 }, radiusM }),
   importKoppen: options => invoke('koppen_import', { options }),
   koppenHistogram: path => invoke('koppen_histogram', { path }),
+  importSatellite: options => invoke('satellite_import', { options }),
+  openProject: path => invoke('project_open', { path }),
+  saveArchive: (path, content, options) =>
+    invoke('archive_save', {
+      path,
+      options: { ...content, tiles: { quality: options.quality, lossless: options.lossless }, heights: options.heights },
+    }),
+  writeBinary: (path, data) => invoke('write_binary', data, { headers: { path: encodeURIComponent(path) } }),
 
   vaultList: root => invoke('vault_list', { root }),
   vaultRead: (root, path) => invoke('vault_read', { root, path }),
