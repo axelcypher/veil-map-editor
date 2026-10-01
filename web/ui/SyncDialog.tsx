@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
 import { dirty, project } from '../model/store'
-import { configured, linkProject, listRemote, newCode, openRemote, syncNow, syncSettings, syncStatus, testConnection, unlinkProject, type RemoteItem, type SyncSettings } from '../model/sync'
+import { DEFAULT_SYNC_URL, configured, linkProject, listRemote, newCode, openRemote, syncNow, syncSettings, syncStatus, testConnection, unlinkProject, type RemoteItem, type SyncSettings } from '../model/sync'
 import { formatInt } from '../model/geo'
 import { Check, Field, Modal, Section } from './components'
 import { CloudIcon } from './icons'
@@ -29,7 +29,7 @@ function Connection() {
   return (
     <Section title="Verbindung">
       <Field label="Server-Adresse">
-        <input type="url" placeholder="https://sync.example.org" value={draft.url} onInput={e => set({ url: (e.target as HTMLInputElement).value })} />
+        <input type="url" placeholder={DEFAULT_SYNC_URL} value={draft.url} onInput={e => set({ url: (e.target as HTMLInputElement).value })} />
       </Field>
       <Field label="Code" hint="Wie ein Passwort: derselbe Code auf allen Geräten öffnet denselben Bereich.">
         <span class="inline">

@@ -47,8 +47,16 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
+/** the own server; any other can be entered in the dialog */
+export const DEFAULT_SYNC_URL = 'https://veilmap.pendzialek.net'
+
+function readSettings(): SyncSettings {
+  const stored = readJson<SyncSettings>(SETTINGS_KEY, { url: '', code: '', serverKey: '', auto: true })
+  return { ...stored, url: stored.url.trim() || DEFAULT_SYNC_URL }
+}
+
 /** per device, never in the project file: the code is a password */
-export const syncSettings = signal<SyncSettings>(readJson(SETTINGS_KEY, { url: '', code: '', serverKey: '', auto: true }))
+export const syncSettings = signal<SyncSettings>(readSettings())
 syncSettings.subscribe(value => writeJson(SETTINGS_KEY, value))
 
 export const syncStatus = signal<{ state: SyncState; text: string; rev?: number; at?: number }>({ state: 'off', text: 'Nicht verbunden' })

@@ -48,8 +48,11 @@ above cap what that can cost.
 The image is built by `.github/workflows/build-sync-server.yml` as
 `ghcr.io/axelcypher/sync-server:sha-<commit>` and `:latest`. `deploy/compose.yaml` and
 `deploy/prod.env` follow the `gitops-homelab` layout: copy them to `apps/docker/sync-server/`,
-set `SYNC_FRONTEND_DOMAIN` (and optionally `SYNC_SERVER_KEY`), and point a Komodo stack at that
-folder. Traefik routes `sync.<domain>` to the container over the `proxy` network.
+set `SYNC_HOST` (and optionally `SYNC_SERVER_KEY`), and point a Komodo stack at that
+folder. Traefik routes `SYNC_HOST` (TLS via the `dns-cloudflare` resolver) over the `proxy` network.
+In the resource-sync TOML (`komodo/apps/<name>.toml`) set `registry_provider="ghcr.io"` and
+`registry_account="axelcypher"`; without them the pull is denied on hosts whose own GHCR access
+is limited. The live stack is `veilmap-sync` on `veilmap.pendzialek.net`.
 
 ## Local
 
