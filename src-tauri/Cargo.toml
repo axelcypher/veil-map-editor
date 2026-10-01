@@ -1,6 +1,6 @@
 [package]
 name = "veil-map-editor"
-version = "0.5.1"
+version = "0.6.0"
 description = "Supplement-Editor für die Weltkarte: Städte, Routen, Staaten und weitere Karteninhalte"
 authors = ["Tobias"]
 license = ""
