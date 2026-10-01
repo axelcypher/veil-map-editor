@@ -28,7 +28,7 @@ import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKi
 import { isImageLayer } from '../model/catalog'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMode, type Tool } from '../model/store'
-import { altKeyOnly, shiftKeyOnly, singleClick } from 'ol/events/condition'
+import { shiftKeyOnly, singleClick } from 'ol/events/condition'
 import type MapBrowserEvent from 'ol/MapBrowserEvent'
 import { shownGeometry } from '../model/terrain'
 import type { KoppenMeta, SatelliteMeta, TerrainMeta } from '../platform'
@@ -91,7 +91,9 @@ export const filterCss = (f: Filter | undefined) =>
 /** Shift, or the freehand switch for touch screens */
 const freehandCondition = (event: MapBrowserEvent) => freehand.peek() || shiftKeyOnly(event)
 /** Alt+click, or a tap while the delete switch is on */
-const deleteCondition = (event: MapBrowserEvent) => singleClick(event) && (deleteVertices.peek() || altKeyOnly(event))
+/** a right click on a vertex, or a tap while the delete switch is on (touch) */
+const deleteCondition = (event: MapBrowserEvent) =>
+  (event.type === 'pointerdown' && (event.originalEvent as PointerEvent).button === 2) || (singleClick(event) && deleteVertices.peek())
 
 /** a tile pyramid from the cache: level z is 512·2^z px wide */
 function tileSource(meta: { maxZoom: number; tileSize: number; tileExt?: string }, path: string) {
@@ -215,6 +217,8 @@ export class MapView {
       frame = requestAnimationFrame(() => events.hover(event.coordinate as LonLat))
     })
     target.addEventListener('mouseleave', () => events.hover(null))
+    // the right button deletes vertices; no browser menu over the map
+    target.addEventListener('contextmenu', event => event.preventDefault())
     this.map.on('moveend', () => {
       const v = this.map.getView()
       events.view(v.getCenter() as LonLat, v.getZoom() ?? 1)
@@ -485,6 +489,9 @@ export class MapView {
 
   setSelection(selection: { kind: EntityKind; id: string } | null) {
     const before = this.selection
+    // the same element clicked again: keep the running edit tools (rebuilding them mid-click
+    // would drop what they were doing)
+    if (before && selection && before.kind === selection.kind && before.id === selection.id) return
     this.selection = selection
     this.context = { ...this.context, selectedId: selection?.id ?? null }
     for (const s of [before, selection]) if (s) this.features[s.kind]?.get(s.id)?.changed()

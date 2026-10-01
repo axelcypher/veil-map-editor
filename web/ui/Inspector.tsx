@@ -59,7 +59,7 @@ function AreaTools({ kind, entity }: { kind: EntityKind; entity: AreaBase }) {
         <button class={active('area-island')} onClick={() => set('area-island')} title="Auf eine Insel klicken, um sie ganz hinzuzufügen">
           ⛰ Insel hinzufügen
         </button>
-        <button class={t.id === 'vertices' ? 'active' : ''} onClick={() => (tool.value = t.id === 'vertices' ? { id: 'select' } : { id: 'vertices' })} title="Stützpunkte ziehen; Alt+Klick löscht einen Punkt">
+        <button class={t.id === 'vertices' ? 'active' : ''} onClick={() => (tool.value = t.id === 'vertices' ? { id: 'select' } : { id: 'vertices' })} title="Stützpunkte ziehen; Rechtsklick löscht einen Punkt">
           ✎ Stützpunkte
         </button>
       </div>
@@ -495,7 +495,7 @@ function RouteFields({ r }: { r: Route }) {
         </div>
         <Check checked={snapCities.value} onChange={v => (snapCities.value = v)} label="An Städten und Routen einrasten" />
         <p class="hint">
-          Punkte ziehen verschiebt sie, auf der Linie ziehen fügt einen ein, Alt+Klick löscht einen. Beginnt oder endet eine Route auf einer anderen, wird sie zum Abzweig bzw. mündet ein: der gemeinsame Teil bleibt in der anderen Route und zählt zur Gesamtstrecke.
+          Punkte ziehen verschiebt sie, auf der Linie ziehen fügt einen ein, Rechtsklick löscht einen. Beginnt oder endet eine Route auf einer anderen, wird sie zum Abzweig bzw. mündet ein: der gemeinsame Teil bleibt in der anderen Route und zählt zur Gesamtstrecke.
           {coords.length > 150 && ' Freihand-Routen haben sehr viele Punkte: „Neu zeichnen“ formt einen Abschnitt um, „Vereinfachen“ dünnt sie aus.'}
           {sea && ' Seewege weichen beim Zeichnen dem Land aus.'}
         </p>

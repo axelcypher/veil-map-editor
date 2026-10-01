@@ -96,7 +96,7 @@ const HINTS: Record<string, string> = {
   'area-add': 'Fläche zeichnen, die dazukommt. Umschalt: freihand.',
   'area-subtract': 'Fläche zeichnen, die wegfällt. Umschalt: freihand.',
   'area-island': 'Auf eine Insel klicken, um sie ganz hinzuzufügen.',
-  vertices: 'Stützpunkte ziehen; auf die Linie ziehen fügt einen ein, Alt+Klick (oder „Löschen“ an) entfernt einen.',
+  vertices: 'Stützpunkte ziehen; auf die Linie ziehen fügt einen ein, Rechtsklick (oder „Löschen“ an) entfernt einen.',
   pick: 'Auf die Karte klicken, um den Punkt zu wählen.',
   reshape: 'Strich an der Route beginnen und enden lassen: ersetzt den Abschnitt dazwischen. Nur an einem Ende: ersetzt das Ende bzw. verlängert die Route. Umschalt: freihand.',
 }
@@ -173,7 +173,7 @@ export function ToolOptions() {
         </button>
       )}
       {t.id === 'vertices' && (
-        <button class={`small${deleteVertices.value ? ' active' : ''}`} title="Tippen auf einen Stützpunkt löscht ihn (statt Alt+Klick)" onClick={() => (deleteVertices.value = !deleteVertices.value)}>
+        <button class={`small${deleteVertices.value ? ' active' : ''}`} title="Tippen auf einen Stützpunkt löscht ihn (statt Rechtsklick)" onClick={() => (deleteVertices.value = !deleteVertices.value)}>
           🗑 Löschen
         </button>
       )}
