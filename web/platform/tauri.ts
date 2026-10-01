@@ -115,6 +115,13 @@ export const tauriPlatform: Platform = {
     }),
   writeBinary: (path, data) => invoke('write_binary', data, { headers: { path: encodeURIComponent(path) } }),
 
+  recovery: {
+    // raw bytes: a large project is not escaped once more into a JSON argument
+    write: text => invoke('recovery_write', new TextEncoder().encode(text)),
+    read: () => invoke<string | null>('recovery_read'),
+    clear: () => invoke('recovery_clear'),
+  },
+
   vaultList: root => invoke('vault_list', { root }),
   vaultRead: (root, path) => invoke('vault_read', { root, path }),
 

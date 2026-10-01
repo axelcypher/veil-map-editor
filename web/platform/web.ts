@@ -84,6 +84,26 @@ export const webPlatform: Platform = {
   async writeBinary(path, data) {
     download(new Blob([data as BlobPart]), path)
   },
+  // the browser keeps the crash copy in its own storage (a few MB; a full one just fails)
+  recovery: {
+    async write(text) {
+      localStorage.setItem('veil.recovery', text)
+    },
+    async read() {
+      try {
+        return localStorage.getItem('veil.recovery')
+      } catch {
+        return null
+      }
+    },
+    async clear() {
+      try {
+        localStorage.removeItem('veil.recovery')
+      } catch {
+        /* storage blocked */
+      }
+    },
+  },
   async vaultList(root) {
     const api = restApi(root)
     const walk = async (dir: string): Promise<{ path: string; modified: number }[]> => {

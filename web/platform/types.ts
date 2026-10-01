@@ -155,6 +155,13 @@ export interface Platform {
   /** writes binary data the page made (globe images and animations) */
   writeBinary(path: string, data: Uint8Array): Promise<void>
 
+  /** the crash copy of the open project, kept outside any project file */
+  recovery: {
+    write(text: string): Promise<void>
+    read(): Promise<string | null>
+    clear(): Promise<void>
+  }
+
   vaultList(root: string): Promise<VaultNote[]>
   vaultRead(root: string, path: string): Promise<string>
 

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
-import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, reshapeRoute, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
+import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
@@ -77,9 +77,19 @@ function Toolbar() {
   )
 }
 
-function FileMenu({ onClose }: { onClose: () => void }) {
+function FileMenu({ onClose, at }: { onClose: () => void; at: { left: number; top: number } }) {
+  const box = useRef<HTMLDivElement>(null)
+  // a tap or click anywhere else closes it (touch screens have no mouse leaving)
+  useEffect(() => {
+    const away = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!box.current?.contains(target) && !(target as Element).closest?.('.brand')) onClose()
+    }
+    window.addEventListener('pointerdown', away)
+    return () => window.removeEventListener('pointerdown', away)
+  }, [])
   return (
-    <div class="menu" onMouseLeave={onClose}>
+    <div class="menu file-menu" ref={box} style={{ left: `${at.left}px`, top: `${at.top}px` }} onMouseLeave={onClose}>
       <button onClick={() => { onClose(); newFile() }}>Neues Projekt</button>
       <button onClick={() => { onClose(); openFile() }}>Öffnen …</button>
       <button onClick={() => { onClose(); saveFile() }}>Speichern</button>
@@ -134,7 +144,11 @@ function WindowControls() {
   }, [])
   if (!controls) return null
   const close = async () => {
-    if (dirty.value && !(await confirmDialog('Ungespeicherte Änderungen verwerfen und beenden?'))) return
+    if (dirty.value) {
+      if (!(await confirmDialog('Ungespeicherte Änderungen verwerfen und beenden?'))) return
+      // discarded on purpose: nothing to offer at the next start
+      await platform.recovery.clear().catch(() => {})
+    }
     controls.close()
   }
   return (
@@ -159,17 +173,30 @@ function WindowControls() {
  * On the desktop it replaces the system title bar; its empty parts move the window.
  */
 function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; setPanel: (p: Panel) => void; show3d: () => void; tabsWidth: number | null }) {
-  const [menu, setMenu] = useState(false)
+  const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
   return (
     <header class="app-header" data-tauri-drag-region>
       <div class="header-left" style={tabsWidth ? { width: `${tabsWidth}px` } : undefined} data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region>
+        <button
+          class={`brand${menu ? ' open' : ''}`}
+          title="Datei"
+          aria-haspopup="menu"
+          aria-expanded={!!menu}
+          onClick={event => {
+            const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+            setMenu(menu ? null : { left: rect.left, top: rect.bottom + 4 })
+          }}
+        >
           <span class="logo" style={{ maskImage: `url(${logoUrl})`, WebkitMaskImage: `url(${logoUrl})` }} aria-hidden="true" />
-          <span class="wordmark" data-tauri-drag-region aria-label="VEIL Editor">
-            <span class="wordmark-veil" data-tauri-drag-region>VEIL</span>
-            <span class="wordmark-editor" data-tauri-drag-region>EDITOR</span>
+          <span class="wordmark" aria-label="VEIL Editor">
+            <span class="wordmark-veil">VEIL</span>
+            <span class="wordmark-editor">EDITOR</span>
           </span>
-        </div>
+          <span class="brand-caret" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+        {menu && <FileMenu at={menu} onClose={() => setMenu(null)} />}
         <nav class="panel-tabs" aria-label="Seitenleiste">
           {PANELS.map(([id, name]) => (
             <button key={id} class={panel === id ? 'active' : ''} onClick={() => setPanel(id)}>
@@ -184,10 +211,6 @@ function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; s
       </span>
       <span class="spacer" data-tauri-drag-region />
       <div class="header-actions">
-        <div class="menu-anchor">
-          <button onClick={() => setMenu(!menu)}>Datei ▾</button>
-          {menu && <FileMenu onClose={() => setMenu(false)} />}
-        </div>
         <button class="icon" onClick={() => saveFile()} title="Speichern (Strg+S)" disabled={!dirty.value}>
           💾
         </button>
@@ -227,13 +250,13 @@ function ConfirmDialog() {
   }
   return (
     <Modal
-      title="Bitte bestätigen"
+      title={request.title ?? 'Bitte bestätigen'}
       onClose={() => answer(false)}
       footer={
         <>
-          <button onClick={() => answer(false)}>Abbrechen</button>
+          <button onClick={() => answer(false)}>{request.no ?? 'Abbrechen'}</button>
           <button class="primary" onClick={() => answer(true)}>
-            Ja
+            {request.yes ?? 'Ja'}
           </button>
         </>
       }
@@ -374,11 +397,21 @@ export function App() {
   useEffect(() => {
     refreshVault(project.value)
     checkAtStartup()
+    // the copy of a crashed session is offered before anything new can replace it
+    let stopRecovery: (() => void) | null = null
+    let unmounted = false
+    offerRecovery().finally(() => {
+      if (!unmounted) stopRecovery = startRecovery()
+    })
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.value) event.preventDefault()
     }
     window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
+    return () => {
+      unmounted = true
+      stopRecovery?.()
+      window.removeEventListener('beforeunload', warn)
+    }
   }, [])
   useEffect(() => {
     mapView.current?.map.updateSize()

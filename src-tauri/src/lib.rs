@@ -40,6 +40,8 @@ fn updater_ready(app: tauri::AppHandle) -> bool {
 
 struct AppState {
     cache_root: PathBuf,
+    /// the crash copy of the open project; app data, not the cache, so the system never empties it
+    recovery: PathBuf,
     terrain: Mutex<Option<Arc<Heightmap>>>,
     /// files the user picked (city plans, textures) that the page may load through the protocol
     files: Mutex<HashMap<String, PathBuf>>,
@@ -222,6 +224,34 @@ fn write_binary(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Resu
     write_user(&app, &path, &mut data.as_slice())
 }
 
+/// Replaces the crash copy: written beside it, flushed to the disk, then renamed over it, so a
+/// crash in the middle leaves the previous copy intact. The text comes as the raw request body.
+#[tauri::command]
+fn recovery_write(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    use std::io::Write;
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else { return Err("Keine Daten erhalten.".into()) };
+    let target = &state.recovery;
+    let temp = target.with_extension("tmp");
+    let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
+    file.write_all(data).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    drop(file);
+    std::fs::rename(&temp, target).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn recovery_read(state: State<'_, AppState>) -> Option<String> {
+    std::fs::read_to_string(&state.recovery).ok()
+}
+
+#[tauri::command]
+fn recovery_clear(state: State<'_, AppState>) -> Result<(), String> {
+    match std::fs::remove_file(&state.recovery) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
 #[tauri::command]
 async fn satellite_import(app: tauri::AppHandle, options: serde_json::Value) -> Result<satellite::SatelliteMeta, String> {
     let options: satellite::SatelliteOptions = serde_json::from_value(options).map_err(|e| e.to_string())?;
@@ -352,7 +382,10 @@ pub fn run() {
             // archive has no source file to be rebuilt from there, so it lives with the app data
             let cache_root = if cfg!(mobile) { app.path().app_local_data_dir()?.join("cache") } else { app.path().app_cache_dir()? };
             std::fs::create_dir_all(&cache_root)?;
-            app.manage(AppState { cache_root, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
+            let recovery_dir = app.path().app_local_data_dir()?.join("recovery");
+            std::fs::create_dir_all(&recovery_dir)?;
+            let recovery = recovery_dir.join("project.json");
+            app.manage(AppState { cache_root, recovery, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
             #[cfg(desktop)]
             {
                 app.handle().plugin(tauri_plugin_process::init())?;
@@ -378,6 +411,9 @@ pub fn run() {
             read_text,
             write_text,
             write_binary,
+            recovery_write,
+            recovery_read,
+            recovery_clear,
             satellite_import,
             archive_save,
             project_open,

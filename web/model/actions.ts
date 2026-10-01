@@ -1,5 +1,5 @@
 // Operations the UI triggers: files, imports, drawing areas, conflicts after a new terrain.
-import { signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
 import polygonClipping, { type MultiPolygon as PcMulti } from 'polygon-clipping'
 import { platform, type ImportReport } from '../platform'
 import { defaultKoppenClasses } from './catalog'
@@ -55,8 +55,16 @@ function clearRasters() {
   conflicts.value = []
 }
 
-export const confirmRequest = signal<{ text: string; resolve: (ok: boolean) => void } | null>(null)
-export const confirmDialog = (text: string) => new Promise<boolean>(resolve => { confirmRequest.value = { text, resolve } })
+export interface ConfirmRequest {
+  text: string
+  resolve: (ok: boolean) => void
+  title?: string
+  yes?: string
+  no?: string
+}
+export const confirmRequest = signal<ConfirmRequest | null>(null)
+export const confirmDialog = (text: string, labels: Pick<ConfirmRequest, 'title' | 'yes' | 'no'> = {}) =>
+  new Promise<boolean>(resolve => { confirmRequest.value = { text, resolve, ...labels } })
 const confirmDiscard = () => confirmDialog('Ungespeicherte Änderungen verwerfen?')
 
 export async function openFile(path?: string) {
@@ -74,6 +82,82 @@ export async function openFile(path?: string) {
     await restoreRasters(next)
   } catch (error) {
     notify(`Öffnen fehlgeschlagen: ${error instanceof Error ? error.message : error}`, 'error')
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// crash copy: every change to an unsaved project is written at once, outside the project file
+
+interface RecoveryCopy {
+  savedAt: number
+  filePath: string | null
+  archive: boolean
+  project: Project
+}
+
+/** the latest wish wins; a write and a clear never overtake each other */
+let recoveryWant: 'write' | 'clear' | null = null
+let recoveryBusy = false
+async function recoveryFlush() {
+  if (recoveryBusy) return
+  recoveryBusy = true
+  try {
+    while (recoveryWant) {
+      const want = recoveryWant
+      recoveryWant = null
+      try {
+        if (want === 'clear') await platform.recovery.clear()
+        else {
+          const copy: RecoveryCopy = { savedAt: Date.now(), filePath: filePath.peek(), archive: fileIsArchive.peek(), project: project.peek() }
+          await platform.recovery.write(JSON.stringify(copy))
+        }
+      } catch (error) {
+        console.warn('Wiederherstellungskopie', error)
+      }
+    }
+  } finally {
+    recoveryBusy = false
+  }
+}
+
+/** keeps the crash copy in step with the project; call after the startup offer */
+export function startRecovery() {
+  return effect(() => {
+    void project.value
+    recoveryWant = dirty.value ? 'write' : 'clear'
+    recoveryFlush()
+  })
+}
+
+/** after a crash: offers the unsaved state of the last session */
+export async function offerRecovery() {
+  let copy: RecoveryCopy
+  try {
+    const text = await platform.recovery.read()
+    if (!text) return
+    copy = JSON.parse(text) as RecoveryCopy
+  } catch {
+    return
+  }
+  const when = new Date(copy.savedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
+  const name = copy.project?.name || copy.filePath?.split(/[\\/]/).pop() || 'ohne Namen'
+  const restore = await confirmDialog(`Die letzte Sitzung wurde nicht sauber beendet. Ungespeicherte Änderungen an „${name}“ vom ${when} wiederherstellen?`, {
+    title: 'Wiederherstellen',
+    yes: 'Wiederherstellen',
+    no: 'Verwerfen',
+  })
+  if (!restore) return
+  try {
+    const next = parseProject(JSON.stringify(copy.project))
+    await platform.closeTerrain()
+    clearRasters()
+    fileIsArchive.value = copy.archive
+    resetProject(next, copy.filePath)
+    dirty.value = true
+    await restoreRasters(next)
+    notify('Wiederhergestellt – bitte speichern.', 'ok')
+  } catch (error) {
+    notify(`Wiederherstellen fehlgeschlagen: ${error instanceof Error ? error.message : error}`, 'error')
   }
 }
 
