@@ -1,0 +1,68 @@
+---
+### ----------------------------------------------- ###
+### configuration variables ####################### ###
+### ----------------------------------------------- ###
+## default container settings
+x-defaults: &defaults
+  init: true
+  restart: unless-stopped
+  env_file:
+    - ./prod.env
+  networks:
+    - proxy
+
+## default traefik configuration
+x-traefik-defaults: &traefik-defaults
+  traefik.enable: true
+  traefik.docker.network: proxy
+x-label-defaults: &label-defaults
+  axlc.managed.by: komodo
+
+## network definition
+networks:
+  proxy:
+    name: proxy
+    external: true
+
+volumes:
+  sync_data:
+
+### ----------------------------------------------- ###
+### definition of services ######################## ###
+### ----------------------------------------------- ###
+services:
+  ## sync store for the own apps (VEIL Editor …): data per secret code
+  sync-server:
+    image: ghcr.io/axelcypher/sync-server:${SYNC_IMAGE_VERSION:-latest}
+    container_name: sync-server
+    <<: *defaults
+
+    environment:
+      SYNC_PORT: 8080
+      SYNC_DATA: /data
+      # optional: without it anybody with the address may open a space of their own
+      SYNC_SERVER_KEY: ${SYNC_SERVER_KEY:-}
+      SYNC_MAX_ITEM_MB: ${SYNC_MAX_ITEM_MB:-64}
+      SYNC_MAX_SPACE_MB: ${SYNC_MAX_SPACE_MB:-1024}
+      SYNC_MAX_SPACES: ${SYNC_MAX_SPACES:-100}
+      SYNC_HISTORY: ${SYNC_HISTORY:-20}
+
+    volumes:
+      - sync_data:/data
+
+    labels:
+      <<: [ *traefik-defaults, *label-defaults ]
+
+      traefik.http.routers.sync.rule: Host(`sync.${SYNC_FRONTEND_DOMAIN:?}`)
+      traefik.http.routers.sync.entrypoints: https
+      traefik.http.routers.sync.middlewares: sync-ratelimit
+      traefik.http.services.sync.loadbalancer.server.port: 8080
+      # guessing codes is hopeless anyway; this keeps a runaway client from flooding the box
+      traefik.http.middlewares.sync-ratelimit.ratelimit.average: 30
+      traefik.http.middlewares.sync-ratelimit.ratelimit.burst: 60
+      homepage.group: Tools
+      homepage.name: Sync
+      homepage.description: sync store for the own apps
+      homepage.href: https://sync.${SYNC_FRONTEND_DOMAIN:?}/health
+
+### EOF

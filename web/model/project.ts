@@ -11,6 +11,7 @@ export function newProject(): Project {
     format: 'veil-project',
     version: 1,
     name: 'Thessari',
+    sync: null,
     planetRadius: PLANET_RADIUS,
     terrain: null,
     satellite: null,

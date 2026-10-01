@@ -74,3 +74,9 @@ export const RulerIcon = () => (
     <path d="M7 12l2 2M9.5 9.5l1.5 1.5M12 7l2 2M14.5 4.5L16 6" />
   </Svg>
 )
+
+export const CloudIcon = () => (
+  <Svg>
+    <path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.6 4.5 4.5 0 0 0 7 18.5z" />
+  </Svg>
+)

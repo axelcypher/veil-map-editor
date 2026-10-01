@@ -405,3 +405,15 @@ tr.selected { background: var(--accent-soft) !important; }
   background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
   font-size: 12px; line-height: 1.35; white-space: pre-line; box-shadow: 0 6px 18px #0007;
 }
+
+/* sync */
+.sync-badge { align-self: center; color: var(--muted); }
+.sync-badge.sync-idle { color: var(--accent); }
+.sync-badge.sync-busy { color: var(--text); animation: sync-pulse 1s ease-in-out infinite alternate; }
+.sync-badge.sync-offline, .sync-badge.sync-error, .sync-badge.sync-conflict { color: var(--danger); }
+dd.sync-offline, dd.sync-error, dd.sync-conflict { color: var(--danger); }
+@keyframes sync-pulse { from { opacity: 1; } to { opacity: 0.35; } }
+.dialog-panel { display: flex; flex-direction: column; }
+.remote-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.remote-items li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.remote-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

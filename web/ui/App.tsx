@@ -20,11 +20,14 @@ import { ProjectPanel } from './ProjectPanel'
 import { StylePanel } from './StylePanel'
 import { StateDialogs } from './StateDialogs'
 import { Tooltip } from './Tooltip'
+import { appDialog } from './dialogs'
+import { SyncBadge, SyncDialog } from './SyncDialog'
+import { startSync } from '../model/sync'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { Modal } from './components'
 
-type Panel = 'layers' | 'data' | 'style' | 'project'
+type Panel = 'layers' | 'data' | 'style'
 
 interface ToolButton {
   icon: ComponentChildren
@@ -103,6 +106,13 @@ function FileMenu({ onClose, at }: { onClose: () => void; at: { left: number; to
         Als Archiv speichern (.veilmap) …
       </button>
       <hr />
+      <button onClick={() => { onClose(); appDialog.value = 'project' }} title="Name, Planet, Importe, Obsidian, Exporte">
+        Projekteinstellungen …
+      </button>
+      <button onClick={() => { onClose(); appDialog.value = 'sync' }} title="Mit dem eigenen Sync-Server abgleichen">
+        Synchronisierung …
+      </button>
+      <hr />
       <button onClick={() => { onClose(); checkForUpdate(true) }}>Nach Updates suchen …</button>
       <button onClick={() => (autoCheck.value = !autoCheck.value)} title="Beim Start höchstens einmal am Tag auf GitHub nachsehen">
         {autoCheck.value ? '✓' : '\u2003'} Automatisch nach Updates suchen
@@ -134,7 +144,6 @@ const PANELS: [Panel, string][] = [
   ['layers', 'Ebenen'],
   ['style', 'Stil'],
   ['data', 'Daten'],
-  ['project', 'Projekt'],
 ]
 
 /** minimise, maximise and close for the app's own title bar (desktop only) */
@@ -214,6 +223,7 @@ function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; s
         {project.value.name}
         {dirty.value ? ' •' : ''}
       </span>
+      <SyncBadge onClick={() => (appDialog.value = 'sync')} />
       <span class="spacer" data-tauri-drag-region />
       <div class="header-actions">
         <button class="icon" onClick={() => saveFile()} title="Speichern (Strg+S)" disabled={!dirty.value}>
@@ -408,6 +418,7 @@ export function App() {
     offerRecovery().finally(() => {
       if (!unmounted) stopRecovery = startRecovery()
     })
+    const stopSync = startSync()
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.value) event.preventDefault()
     }
@@ -415,6 +426,7 @@ export function App() {
     return () => {
       unmounted = true
       stopRecovery?.()
+      stopSync()
       window.removeEventListener('beforeunload', warn)
     }
   }, [])
@@ -446,7 +458,6 @@ export function App() {
           {panel === 'layers' && <LayersPanel />}
           {panel === 'data' && <Overviews active={overview} onChange={setOverview} />}
           {panel === 'style' && <StylePanel />}
-          {panel === 'project' && <ProjectPanel />}
         </aside>
         <div class="sidebar-resize" onPointerDown={resize} onDblClick={() => setSidebarWidth(420)} />
         <Toolbar />
@@ -459,7 +470,7 @@ export function App() {
           {!terrain.value && (
             <div class="empty-map">
               <p>Noch kein Gelände geladen.</p>
-              <button class="primary" onClick={() => choosePanel('project')}>
+              <button class="primary" onClick={() => (appDialog.value = 'project')}>
                 Heightmap importieren
               </button>
             </div>
@@ -471,6 +482,13 @@ export function App() {
       {show3d && <View3D onClose={() => setShow3d(false)} />}
       <Notices />
       <StateDialogs />
+      {appDialog.value === 'sync' && <SyncDialog onClose={() => (appDialog.value = null)} />}
+      {/* hidden while a point is picked on the map for it (control points) */}
+      {appDialog.value === 'project' && tool.value.id !== 'pick' && (
+        <Modal title="Projekteinstellungen" wide onClose={() => (appDialog.value = null)}>
+          <ProjectPanel />
+        </Modal>
+      )}
       <ConfirmDialog />
       <Tooltip />
     </div>

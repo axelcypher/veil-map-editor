@@ -161,6 +161,25 @@ export async function offerRecovery() {
   }
 }
 
+/** a project from elsewhere (the sync server) replaces the open one, rasters included */
+export async function adoptProject(next: Project, path: string | null) {
+  await platform.closeTerrain()
+  clearRasters()
+  fileIsArchive.value = false
+  resetProject(next, path)
+  await restoreRasters(next)
+}
+
+/** after a change from the sync server: rasters whose reference changed are loaded again */
+export async function reloadChangedRasters(before: Project, after: Project) {
+  const changed = before.terrain?.id !== after.terrain?.id || before.koppen?.id !== after.koppen?.id || before.satellite?.id !== after.satellite?.id ||
+    before.imageLayers.map(l => l.id).join() !== after.imageLayers.map(l => l.id).join()
+  if (!changed) return
+  await platform.closeTerrain()
+  clearRasters()
+  await restoreRasters(after)
+}
+
 async function restoreRasters(p: Project) {
   if (p.terrain) {
     try {

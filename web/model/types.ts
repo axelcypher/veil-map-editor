@@ -365,6 +365,8 @@ export interface Project {
   format: 'veil-project'
   version: 1
   name: string
+  /** the item on the sync server this project is kept in step with; null: not synced */
+  sync: { item: string } | null
   /** metres; the planet is a sphere */
   planetRadius: number
   terrain: TerrainRef | null
