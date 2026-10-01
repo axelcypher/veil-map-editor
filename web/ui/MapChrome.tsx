@@ -4,6 +4,8 @@ import { formatKm } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
 import { deleteVertices, freehand, freehandSmoothing, placeType, project, snapCities, tool, type MeasureMode } from '../model/store'
 import { mapView } from './mapRef'
+import { borderModes, type BorderMode } from '../model/actions'
+import type { AreaKind } from '../model/types'
 
 export const viewInfo = signal<{ resolution: number; centerLat: number; rotation: number }>({ resolution: 1, centerLat: 0, rotation: 0 })
 export const measurement = signal<{ mode: MeasureMode; text: string; value: number } | null>(null)
@@ -53,6 +55,36 @@ export function ScaleBar() {
       </div>
       <div class="scale-label">{formatKm(step)}</div>
     </div>
+  )
+}
+
+const BORDER_NAMES: Record<BorderMode, string> = {
+  cut: 'Nachbarn beschneiden',
+  fit: 'An Nachbarn anpassen',
+  overlap: 'Überlappen erlauben',
+}
+const BORDER_HINTS: Record<BorderMode, string> = {
+  cut: 'Die neue Fläche schneidet sich aus den Nachbarflächen heraus.',
+  fit: 'Die neue Fläche endet an den Grenzen der Nachbarn – so entstehen saubere gemeinsame Grenzen. Provinzen bleiben zudem im Staatsgebiet.',
+  overlap: 'Flächen dürfen sich überdecken.',
+}
+
+/** how a drawn shape meets its neighbours of the same kind (provinces: within their state) */
+export function BorderModeSelect({ kind }: { kind: AreaKind }) {
+  const mode = borderModes.value[kind]
+  return (
+    <select
+      class="border-mode"
+      value={mode}
+      title={BORDER_HINTS[mode]}
+      onChange={e => (borderModes.value = { ...borderModes.value, [kind]: (e.target as HTMLSelectElement).value as BorderMode })}
+    >
+      {(Object.keys(BORDER_NAMES) as BorderMode[]).map(m => (
+        <option key={m} value={m}>
+          {BORDER_NAMES[m]}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -106,6 +138,7 @@ export function ToolOptions() {
       {t.id === 'place' && t.kind === 'city' && typeSelect('city', p.catalog.cityTypes)}
       {t.id === 'place' && t.kind === 'marker' && typeSelect('marker', p.catalog.markerTypes.map(x => ({ id: x.id, name: `${x.icon} ${x.name}` })))}
       {t.id === 'draw-line' && t.kind === 'route' && typeSelect('route', p.catalog.routeTypes)}
+      {(t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-island') && <BorderModeSelect kind={t.kind} />}
       {t.id === 'measure' && m && m.mode === t.mode && <span class="measure-result">{m.text}</span>}
       {(t.id === 'draw-line' || t.id === 'reshape' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract') && (
         <label class="smoothing" title="Glättet Freihandstriche (Umschalt gedrückt) nach dem Loslassen; geklickte Ecken bleiben scharf">

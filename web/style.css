@@ -119,6 +119,8 @@ textarea { resize: vertical; }
 
 .toolbar { display: flex; flex-direction: column; gap: 10px; padding: 6px 4px; background: var(--chrome); border-right: 1px solid var(--line); flex-shrink: 0; overflow-y: auto; }
 .tool-group { display: flex; flex-direction: column; gap: 3px; }
+.ui-icon { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.25em; flex: none; }
+.toolbar button .ui-icon { width: 18px; height: 18px; vertical-align: middle; }
 .toolbar button { width: 34px; height: 34px; padding: 0; font-size: 15px; border-radius: 50%; }
 
 .map-area { flex: 1; position: relative; min-width: 0; }
@@ -395,4 +397,11 @@ tr.selected { background: var(--accent-soft) !important; }
 @media (max-width: 600px) {
   .relation-list li { grid-template-columns: minmax(0, 1fr) auto; }
   .relation-back { grid-column: 1 / -1; }
+}
+
+/* the app's own tooltip (see Tooltip.tsx) */
+.tooltip {
+  position: fixed; z-index: 200; max-width: 320px; padding: 5px 9px; pointer-events: none;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 12px; line-height: 1.35; white-space: pre-line; box-shadow: 0 6px 18px #0007;
 }

@@ -1,5 +1,7 @@
 import { effect } from '@preact/signals'
+import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import { CultureIcon, GlobeIcon, PathMeasureIcon, PinIcon, RegimentIcon, RulerIcon, SaveIcon } from './icons'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
@@ -17,6 +19,7 @@ import { Overviews, type OverviewId } from './Overviews'
 import { ProjectPanel } from './ProjectPanel'
 import { StylePanel } from './StylePanel'
 import { StateDialogs } from './StateDialogs'
+import { Tooltip } from './Tooltip'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { Modal } from './components'
@@ -24,7 +27,7 @@ import { Modal } from './components'
 type Panel = 'layers' | 'data' | 'style' | 'project'
 
 interface ToolButton {
-  icon: string
+  icon: ComponentChildren
   name: string
   tool: Tool
   key?: string
@@ -33,22 +36,24 @@ const TOOL_GROUPS: ToolButton[][] = [
   [{ icon: '➤', name: 'Auswählen und verschieben', tool: { id: 'select' }, key: 'v' }],
   [
     { icon: '●', name: 'Stadt setzen', tool: { id: 'place', kind: 'city' }, key: 'c' },
-    { icon: '📍', name: 'Marker setzen', tool: { id: 'place', kind: 'marker' }, key: 'm' },
-    { icon: 'A', name: 'Beschriftung setzen', tool: { id: 'place', kind: 'label' }, key: 't' },
-    { icon: '〰', name: 'Beschriftung entlang einer Linie', tool: { id: 'draw-line', kind: 'label' } },
+    { icon: <PinIcon />, name: 'Marker setzen', tool: { id: 'place', kind: 'marker' }, key: 'm' },
     { icon: '⤳', name: 'Route zeichnen', tool: { id: 'draw-line', kind: 'route' }, key: 'r' },
-    { icon: '⚑', name: 'Regiment setzen', tool: { id: 'place', kind: 'regiment' } },
+    { icon: <RegimentIcon />, name: 'Regiment setzen', tool: { id: 'place', kind: 'regiment' } },
   ],
   [
     { icon: '♛', name: 'Neuer Staat (Umriss zeichnen)', tool: { id: 'area-new', kind: 'state' } },
     { icon: '▦', name: 'Neue Provinz', tool: { id: 'area-new', kind: 'province' } },
-    { icon: '♫', name: 'Neue Kultur', tool: { id: 'area-new', kind: 'culture' } },
+    { icon: <CultureIcon />, name: 'Neue Kultur', tool: { id: 'area-new', kind: 'culture' } },
     { icon: '☩', name: 'Neue Religion', tool: { id: 'area-new', kind: 'religion' } },
     { icon: '▨', name: 'Neue Zone', tool: { id: 'area-new', kind: 'zone' } },
   ],
   [
-    { icon: '📏', name: 'Lineal (Großkreis)', tool: { id: 'measure', mode: 'ruler' } },
-    { icon: '➰', name: 'Opisometer (Weglänge)', tool: { id: 'measure', mode: 'path' } },
+    { icon: 'A', name: 'Beschriftung setzen', tool: { id: 'place', kind: 'label' }, key: 't' },
+    { icon: '〰', name: 'Beschriftung entlang einer Linie', tool: { id: 'draw-line', kind: 'label' } },
+  ],
+  [
+    { icon: <RulerIcon />, name: 'Lineal (Großkreis)', tool: { id: 'measure', mode: 'ruler' } },
+    { icon: <PathMeasureIcon />, name: 'Opisometer (Weglänge)', tool: { id: 'measure', mode: 'path' } },
     { icon: '⬠', name: 'Planimeter (Fläche)', tool: { id: 'measure', mode: 'area' } },
   ],
 ]
@@ -212,7 +217,7 @@ function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; s
       <span class="spacer" data-tauri-drag-region />
       <div class="header-actions">
         <button class="icon" onClick={() => saveFile()} title="Speichern (Strg+S)" disabled={!dirty.value}>
-          💾
+          <SaveIcon />
         </button>
         <button class="icon" onClick={undo} disabled={!canUndo.value} title="Rückgängig (Strg+Z)">
           ↶
@@ -221,7 +226,7 @@ function Header({ panel, setPanel, show3d, tabsWidth }: { panel: Panel | null; s
           ↷
         </button>
         <button onClick={show3d} title="3D-Gelände und Globus">
-          🌐 3D
+          <GlobeIcon /> 3D
         </button>
       </div>
       <WindowControls />
@@ -467,6 +472,7 @@ export function App() {
       <Notices />
       <StateDialogs />
       <ConfirmDialog />
+      <Tooltip />
     </div>
   )
 }

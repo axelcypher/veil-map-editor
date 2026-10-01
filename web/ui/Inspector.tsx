@@ -1,6 +1,8 @@
 // Properties of the selected element.
 import { useEffect, useState } from 'preact/hooks'
-import { exclusiveAreas, fitProvinceToState, isArea, routeAroundLand, simplifyRoute } from '../model/actions'
+import { fitProvinceToState, isArea, routeAroundLand, simplifyRoute } from '../model/actions'
+import { BorderModeSelect } from './MapChrome'
+import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
@@ -63,7 +65,9 @@ function AreaTools({ kind, entity }: { kind: EntityKind; entity: AreaBase }) {
       </div>
       <p class="hint">Zeichnen: Klicks setzen Punkte, Doppelklick schließt. Mit gedrückter Umschalttaste freihand.</p>
       <Check checked={entity.clip} onChange={clip => updateEntity(kind, entity.id, { clip } as never)} label="An der Küste zuschneiden" />
-      {(kind === 'state' || kind === 'province') && <Check checked={exclusiveAreas.value} onChange={v => (exclusiveAreas.value = v)} label={kind === 'state' ? 'Nachbarstaaten ausschneiden' : 'Nachbarprovinzen ausschneiden'} />}
+      <Field label="Grenzen" hint={kind === 'province' ? 'gegenüber den Provinzen desselben Staates' : `gegenüber anderen ${KIND_NAMES[kind][1]}`}>
+        <BorderModeSelect kind={kind} />
+      </Field>
       {kind === 'province' && <button onClick={() => fitProvinceToState(entity.id)}>An Staatsgebiet anpassen</button>}
       {entity.geometry && <button onClick={() => updateEntity(kind, entity.id, { geometry: null } as never)}>Fläche leeren</button>}
     </Section>
@@ -102,7 +106,9 @@ function StateFields({ s }: { s: State }) {
       <Section title="Unterpunkte">
         <div class="sub-items">
           <button onClick={() => openStateDialog('diplomacy', s.id)} disabled={p.states.length < 2}>
-            <span>🤝 Diplomatie</span>
+            <span>
+              <DiplomacyIcon /> Diplomatie
+            </span>
             <span class="muted">{p.display.diplomacyFocus === s.id ? 'auf der Karte' : ''}</span>
           </button>
           <button onClick={() => openStateDialog('provinces', s.id)}>
@@ -110,7 +116,9 @@ function StateFields({ s }: { s: State }) {
             <span class="badge">{p.provinces.filter(x => x.stateId === s.id).length}</span>
           </button>
           <button onClick={() => openStateDialog('military', s.id)}>
-            <span>⚑ Militär</span>
+            <span>
+              <RegimentIcon /> Militär
+            </span>
             <span class="badge">{p.regiments.filter(r => r.stateId === s.id).length}</span>
           </button>
         </div>

@@ -554,18 +554,36 @@ function densify(line: LonLat[], count: number): LonLat[] {
 const toMulti = (g: AreaGeometry | null): PcMulti => (g ? (g.coordinates as unknown as PcMulti) : [])
 const fromMulti = (coords: PcMulti): AreaGeometry | null => (coords.length ? { type: 'MultiPolygon', coordinates: coords as unknown as LonLat[][][] } : null)
 
-/** states cannot overlap, and provinces of one state cannot either */
-function exclusiveRivals(p: Project, kind: AreaKind, id: string): AreaBase[] {
-  if (kind === 'state') return p.states.filter(s => s.id !== id)
-  if (kind === 'province') {
-    const own = p.provinces.find(x => x.id === id)
-    return p.provinces.filter(x => x.id !== id && x.stateId === own?.stateId)
+/**
+ * How a drawn shape meets the elements of its kind next to it: it cuts them back, it is cut back
+ * to them (clean shared borders), or both keep overlapping. Remembered per kind and machine.
+ */
+export type BorderMode = 'cut' | 'fit' | 'overlap'
+const BORDER_DEFAULTS: Record<AreaKind, BorderMode> = { state: 'cut', province: 'cut', culture: 'overlap', religion: 'overlap', zone: 'overlap' }
+export const borderModes = signal<Record<AreaKind, BorderMode>>(readBorderModes())
+function readBorderModes(): Record<AreaKind, BorderMode> {
+  try {
+    return { ...BORDER_DEFAULTS, ...JSON.parse(localStorage.getItem('veil.borders') ?? '{}') }
+  } catch {
+    return { ...BORDER_DEFAULTS }
   }
-  return []
+}
+borderModes.subscribe(value => {
+  try {
+    localStorage.setItem('veil.borders', JSON.stringify(value))
+  } catch {
+    /* storage blocked */
+  }
+})
+
+/** the neighbours a shape of this kind must not overlap: the same kind; provinces only within their state */
+function rivalsOf(p: Project, kind: AreaKind, id: string, stateId: string): AreaBase[] {
+  if (kind === 'province') return p.provinces.filter(x => x.id !== id && x.stateId === stateId)
+  return (p[collectionOf(kind)] as AreaBase[]).filter(x => x.id !== id)
 }
 
-function subtractFromRivals(p: Project, kind: AreaKind, id: string, shape: PcMulti): Project {
-  const rivals = exclusiveRivals(p, kind, id)
+function subtractFromRivals(p: Project, kind: AreaKind, id: string, stateId: string, shape: PcMulti): Project {
+  const rivals = rivalsOf(p, kind, id, stateId)
   if (!rivals.length) return p
   const box = bboxOf(shape as unknown as LonLat[][][])
   const changed = new Map<string, AreaGeometry | null>()
@@ -574,19 +592,46 @@ function subtractFromRivals(p: Project, kind: AreaKind, id: string, shape: PcMul
     changed.set(rival.id, fromMulti(polygonClipping.difference(toMulti(rival.geometry), shape)))
   }
   if (!changed.size) return p
-  const key = kind === 'state' ? 'states' : 'provinces'
+  const key = collectionOf(kind)
   return { ...p, [key]: (p[key] as AreaBase[]).map(item => (changed.has(item.id) ? { ...item, geometry: changed.get(item.id)! } : item)) }
 }
 
-export const exclusiveAreas = signal(true)
+/** the shape without what the neighbours already hold; a province also stays inside its state */
+function fitToRivals(p: Project, kind: AreaKind, id: string, stateId: string, shape: PcMulti): PcMulti {
+  const box = bboxOf(shape as unknown as LonLat[][][])
+  const taken = rivalsOf(p, kind, id, stateId)
+    .filter(r => r.geometry && bboxHit(bboxOf(r.geometry.coordinates), box))
+    .map(r => toMulti(r.geometry))
+  let out = taken.length ? polygonClipping.difference(shape, ...taken) : shape
+  const state = kind === 'province' ? p.states.find(s => s.id === stateId) : undefined
+  if (state?.geometry && out.length) out = polygonClipping.intersection(out, toMulti(state.geometry))
+  return out
+}
+
+/** the drawn shape after the border rule; null when nothing of it is left */
+function applyBorders(p: Project, kind: AreaKind, id: string, stateId: string, shape: PcMulti): { shape: PcMulti; next: (q: Project) => Project } | null {
+  const mode = borderModes.value[kind]
+  if (mode === 'fit') {
+    const fitted = fitToRivals(p, kind, id, stateId, shape)
+    if (!fitted.length) {
+      notify('Die gezeichnete Fläche liegt ganz in Nachbarflächen – nichts übernommen.')
+      return null
+    }
+    return { shape: fitted, next: q => q }
+  }
+  if (mode === 'cut') return { shape, next: q => subtractFromRivals(q, kind, id, stateId, shape) }
+  return { shape, next: q => q }
+}
 
 export function handleArea(t: Tool, polygon: LonLat[][], at: LonLat) {
   const p = project.value
   if (t.id === 'area-new') {
     const entity = t.kind === 'province' ? create.province(p, selectionState()) : create[t.kind](p)
-    entity.geometry = { type: 'MultiPolygon', coordinates: [polygon] }
-    let next: Project = { ...p, [collectionOf(t.kind)]: [...(p[collectionOf(t.kind)] as AreaBase[]), entity] }
-    if (exclusiveAreas.value) next = subtractFromRivals(next, t.kind, entity.id, [polygon] as unknown as PcMulti)
+    const stateId = (entity as { stateId?: string }).stateId ?? ''
+    const ruled = applyBorders(p, t.kind, entity.id, stateId, [polygon] as unknown as PcMulti)
+    if (!ruled) return
+    entity.geometry = fromMulti(ruled.shape)
+    const next: Project = ruled.next({ ...p, [collectionOf(t.kind)]: [...(p[collectionOf(t.kind)] as AreaBase[]), entity] })
     commit(next)
     selection.value = { kind: t.kind, id: entity.id }
     tool.value = { id: 'area-add', kind: t.kind, entityId: entity.id }
@@ -604,12 +649,16 @@ export function handleArea(t: Tool, polygon: LonLat[][], at: LonLat) {
     }
     shape = [island] as unknown as PcMulti
   } else shape = [polygon] as unknown as PcMulti
-  const geometry =
-    t.id === 'area-subtract' ? fromMulti(polygonClipping.difference(toMulti(entity.geometry), shape)) : fromMulti(polygonClipping.union(toMulti(entity.geometry), shape))
   const key = collectionOf(t.kind)
-  let next: Project = { ...p, [key]: (p[key] as AreaBase[]).map(item => (item.id === entity.id ? { ...item, geometry } : item)) }
-  if (t.id !== 'area-subtract' && exclusiveAreas.value) next = subtractFromRivals(next, t.kind, entity.id, shape)
-  commit(next)
+  if (t.id === 'area-subtract') {
+    const geometry = fromMulti(polygonClipping.difference(toMulti(entity.geometry), shape))
+    commit({ ...p, [key]: (p[key] as AreaBase[]).map(item => (item.id === entity.id ? { ...item, geometry } : item)) })
+    return
+  }
+  const ruled = applyBorders(p, t.kind, entity.id, (entity as { stateId?: string }).stateId ?? '', shape)
+  if (!ruled) return
+  const geometry = fromMulti(polygonClipping.union(toMulti(entity.geometry), ruled.shape))
+  commit(ruled.next({ ...p, [key]: (p[key] as AreaBase[]).map(item => (item.id === entity.id ? { ...item, geometry } : item)) }))
 }
 
 /** cuts a province to the drawn outline of its state */

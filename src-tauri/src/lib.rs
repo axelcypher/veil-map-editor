@@ -40,8 +40,11 @@ fn updater_ready(app: tauri::AppHandle) -> bool {
 
 struct AppState {
     cache_root: PathBuf,
-    /// the crash copy of the open project; app data, not the cache, so the system never empties it
-    recovery: PathBuf,
+    /// the crash copy of the open project; app data, not the cache, so the system never empties it.
+    /// None while another instance holds it: that session is still running, not crashed.
+    recovery: Option<PathBuf>,
+    /// held open for the whole run; the system lets go of the lock when the process ends, crash included
+    _recovery_lock: Option<std::fs::File>,
     terrain: Mutex<Option<Arc<Heightmap>>>,
     /// files the user picked (city plans, textures) that the page may load through the protocol
     files: Mutex<HashMap<String, PathBuf>>,
@@ -230,7 +233,7 @@ fn write_binary(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Resu
 fn recovery_write(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     use std::io::Write;
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else { return Err("Keine Daten erhalten.".into()) };
-    let target = &state.recovery;
+    let Some(target) = &state.recovery else { return Ok(()) };
     let temp = target.with_extension("tmp");
     let mut file = std::fs::File::create(&temp).map_err(|e| e.to_string())?;
     file.write_all(data).map_err(|e| e.to_string())?;
@@ -241,12 +244,13 @@ fn recovery_write(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) 
 
 #[tauri::command]
 fn recovery_read(state: State<'_, AppState>) -> Option<String> {
-    std::fs::read_to_string(&state.recovery).ok()
+    std::fs::read_to_string(state.recovery.as_ref()?).ok()
 }
 
 #[tauri::command]
 fn recovery_clear(state: State<'_, AppState>) -> Result<(), String> {
-    match std::fs::remove_file(&state.recovery) {
+    let Some(target) = &state.recovery else { return Ok(()) };
+    match std::fs::remove_file(target) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
         _ => Ok(()),
     }
@@ -384,8 +388,13 @@ pub fn run() {
             std::fs::create_dir_all(&cache_root)?;
             let recovery_dir = app.path().app_local_data_dir()?.join("recovery");
             std::fs::create_dir_all(&recovery_dir)?;
-            let recovery = recovery_dir.join("project.json");
-            app.manage(AppState { cache_root, recovery, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
+            // the first instance owns the crash copy; a second one leaves it alone
+            let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(recovery_dir.join("lock"))?;
+            let (recovery, _recovery_lock) = match lock.try_lock() {
+                Ok(()) => (Some(recovery_dir.join("project.json")), Some(lock)),
+                Err(_) => (None, None),
+            };
+            app.manage(AppState { cache_root, recovery, _recovery_lock, terrain: Mutex::new(None), files: Mutex::new(HashMap::new()) });
             #[cfg(desktop)]
             {
                 app.handle().plugin(tauri_plugin_process::init())?;
