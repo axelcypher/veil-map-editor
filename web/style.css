@@ -415,8 +415,10 @@ dd.sync-offline, dd.sync-error, dd.sync-conflict { color: var(--danger); }
 @keyframes sync-pulse { from { opacity: 1; } to { opacity: 0.35; } }
 .dialog-panel { display: flex; flex-direction: column; }
 .remote-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.remote-items li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+.remote-items li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; }
 .remote-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* a name that selects something, e.g. the route a branch belongs to */
 button.link { background: none; border: none; padding: 0; min-height: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; }
 button.link:hover:not(:disabled) { background: none; color: var(--text); }
+/* a recent project on the sync server */
+.menu .recent .ui-icon { margin-right: 5px; }

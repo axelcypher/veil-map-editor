@@ -296,9 +296,21 @@ function readRecent(): string[] {
     return []
   }
 }
-function rememberRecent(path: string) {
+/** prefix of a recent entry that lives on the sync server: "cloud:<item>" */
+export const CLOUD_RECENT = 'cloud:'
+
+export function rememberRecent(path: string) {
   if (path.startsWith('upload:') || path.startsWith('download:')) return
   recentFiles.value = [path, ...recentFiles.value.filter(p => p !== path)].slice(0, 8)
+  try {
+    localStorage.setItem('veil.recent', JSON.stringify(recentFiles.value))
+  } catch {
+    /* storage blocked */
+  }
+}
+
+export function forgetRecent(path: string) {
+  recentFiles.value = recentFiles.value.filter(p => p !== path)
   try {
     localStorage.setItem('veil.recent', JSON.stringify(recentFiles.value))
   } catch {

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
 import { dirty, project } from '../model/store'
-import { DEFAULT_SYNC_URL, configured, linkProject, listRemote, newCode, openRemote, syncNow, syncSettings, syncStatus, testConnection, unlinkProject, type RemoteItem, type SyncSettings } from '../model/sync'
+import { DEFAULT_SYNC_URL, configured, deleteRemote, linkProject, listRemote, newCode, openRemote, syncNow, syncSettings, syncStatus, testConnection, unlinkProject, type RemoteItem, type SyncSettings } from '../model/sync'
 import { formatInt } from '../model/geo'
 import { Check, Field, Modal, Section } from './components'
 import { CloudIcon } from './icons'
@@ -166,6 +166,18 @@ function OnServer() {
                 }}
               >
                 Öffnen
+              </button>
+              <button
+                class="small icon danger"
+                title="Vom Server löschen, samt allen alten Ständen"
+                onClick={async () => {
+                  const open = item.name === current
+                  const text = `„${item.name}“ mit allen gespeicherten Ständen vom Server löschen? Das kann nicht rückgängig gemacht werden.${open ? ' Das offene Projekt bleibt hier erhalten, wird aber nicht mehr synchronisiert.' : ''} Andere Geräte, die es offen haben, verlieren die Verbindung.`
+                  if (!(await confirmDialog(text, { title: 'Vom Server löschen', yes: 'Löschen' }))) return
+                  if (await deleteRemote(item.name, item.rev)) load()
+                }}
+              >
+                🗑
               </button>
             </li>
           ))}

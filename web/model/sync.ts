@@ -2,7 +2,7 @@
 // stores bytes per item and revision and refuses a write that does not build on the newest one;
 // what an item means is decided here: one item per project, the .veil JSON.
 import { effect, signal } from '@preact/signals'
-import { adoptProject, confirmDialog, reloadChangedRasters } from './actions'
+import { adoptProject, CLOUD_RECENT, confirmDialog, forgetRecent, reloadChangedRasters, rememberRecent } from './actions'
 import { parseProject, serializeProject } from './project'
 import { commit, notify, patchProject, project } from './store'
 import type { Project } from './types'
@@ -60,6 +60,15 @@ export const syncSettings = signal<SyncSettings>(readSettings())
 syncSettings.subscribe(value => writeJson(SETTINGS_KEY, value))
 
 export const syncStatus = signal<{ state: SyncState; text: string; rev?: number; at?: number }>({ state: 'off', text: 'Nicht verbunden' })
+
+/** the project name of each item, for the recent list (the item name is only a slug) */
+const NAMES_KEY = 'veil.sync.names'
+export const remoteNames = signal<Record<string, string>>(readJson(NAMES_KEY, {}))
+function remember(item: string, name: string) {
+  remoteNames.value = { ...remoteNames.value, [item]: name }
+  writeJson(NAMES_KEY, remoteNames.value)
+  rememberRecent(CLOUD_RECENT + item)
+}
 
 /** the revision each item was last exchanged at, on this device */
 const revs: Record<string, number> = readJson(REVS_KEY, {})
@@ -160,6 +169,7 @@ export async function linkProject() {
     setRev(item, meta.rev)
     exchanged = { item, json }
     setStatus('idle', 'Synchronisiert', meta.rev)
+    remember(item, project.peek().name)
     notify('Projekt liegt jetzt auf dem Sync-Server.', 'ok')
   } catch (error) {
     patchProject({ sync: null })
@@ -186,9 +196,30 @@ export async function openRemote(item: string) {
     await adoptProject(next, null)
     exchanged = { item, json: syncJson(project.peek()) }
     setStatus('idle', 'Synchronisiert', rev)
+    remember(item, next.name)
   } catch (error) {
     notify(`Laden vom Server fehlgeschlagen: ${describe(error)}`, 'error')
   }
+}
+
+/**
+ * Removes an item with its history from the server; `rev` is the revision it was seen at, so a
+ * newer upload from another device is not removed unseen. The open project only loses its link.
+ */
+export async function deleteRemote(item: string, rev: number) {
+  try {
+    await request(`/v1/items/${item}`, { method: 'DELETE', headers: { 'If-Match': `"${rev}"` } })
+  } catch (error) {
+    if (error instanceof SyncError && error.status === 409) notify('Der Stand wurde inzwischen von einem anderen Gerät geändert – Liste neu laden und erneut löschen.', 'error')
+    else notify(`Löschen fehlgeschlagen: ${describe(error)}`, 'error')
+    return false
+  }
+  delete revs[item]
+  writeJson(REVS_KEY, revs)
+  forgetRecent(CLOUD_RECENT + item)
+  if (project.peek().sync?.item === item) unlinkProject()
+  notify('Vom Server gelöscht.', 'ok')
+  return true
 }
 
 function setStatus(state: SyncState, text: string, rev?: number) {

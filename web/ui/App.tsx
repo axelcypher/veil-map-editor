@@ -1,11 +1,11 @@
 import { effect } from '@preact/signals'
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { CultureIcon, GlobeIcon, PathMeasureIcon, PinIcon, RegimentIcon, RulerIcon, SaveIcon } from './icons'
+import { CloudIcon, CultureIcon, GlobeIcon, PathMeasureIcon, PinIcon, RegimentIcon, RulerIcon, SaveIcon } from './icons'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
-import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
+import { CLOUD_RECENT, confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
@@ -22,7 +22,7 @@ import { StateDialogs } from './StateDialogs'
 import { Tooltip } from './Tooltip'
 import { appDialog } from './dialogs'
 import { SyncBadge, SyncDialog } from './SyncDialog'
-import { startSync } from '../model/sync'
+import { openRemote, remoteNames, startSync } from '../model/sync'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { Modal } from './components'
@@ -85,6 +85,13 @@ function Toolbar() {
   )
 }
 
+/** a recent project from the sync server: opened from there, after asking about unsaved changes */
+async function openRecentCloud(item: string) {
+  if (project.value.sync?.item === item) return
+  if (dirty.value && !(await confirmDialog('Ungespeicherte Änderungen verwerfen und das Projekt vom Server öffnen?', { yes: 'Öffnen' }))) return
+  await openRemote(item)
+}
+
 function FileMenu({ onClose, at }: { onClose: () => void; at: { left: number; top: number } }) {
   const box = useRef<HTMLDivElement>(null)
   // a tap or click anywhere else closes it (touch screens have no mouse leaving)
@@ -118,11 +125,18 @@ function FileMenu({ onClose, at }: { onClose: () => void; at: { left: number; to
         {autoCheck.value ? '✓' : '\u2003'} Automatisch nach Updates suchen
       </button>
       {recentFiles.value.length > 0 && <hr />}
-      {recentFiles.value.map(path => (
-        <button key={path} class="recent" title={path} onClick={() => { onClose(); openFile(path) }}>
-          {path.split(/[\\/]/).pop()}
-        </button>
-      ))}
+      {recentFiles.value.map(path =>
+        path.startsWith(CLOUD_RECENT) ? (
+          <button key={path} class="recent" title={`Vom Sync-Server: ${path.slice(CLOUD_RECENT.length)}`} onClick={() => { onClose(); openRecentCloud(path.slice(CLOUD_RECENT.length)) }}>
+            <CloudIcon />
+            {remoteNames.value[path.slice(CLOUD_RECENT.length)] ?? path.slice(CLOUD_RECENT.length)}
+          </button>
+        ) : (
+          <button key={path} class="recent" title={path} onClick={() => { onClose(); openFile(path) }}>
+            {path.split(/[\\/]/).pop()}
+          </button>
+        ),
+      )}
     </div>
   )
 }
