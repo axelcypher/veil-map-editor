@@ -85,9 +85,10 @@ jobs:
             name=$(basename "$f")
             cp "$f" "out/${name// /.}"
           done
-          # the update manifest the app asks for; only signed builds have the .sig files
-          nsis_sig=$(ls "$bundle"/nsis/*.exe.sig 2>/dev/null | head -1)
-          msi_sig=$(ls "$bundle"/msi/*.msi.sig 2>/dev/null | head -1)
+          # the update manifest the app asks for; only signed builds have the .sig files (without
+          # them ls fails, which -e and pipefail would turn into an abort)
+          nsis_sig=$(ls "$bundle"/nsis/*.exe.sig 2>/dev/null | head -1 || true)
+          msi_sig=$(ls "$bundle"/msi/*.msi.sig 2>/dev/null | head -1 || true)
           if [ -n "$nsis_sig" ] && [ -n "$msi_sig" ]; then
             base="https://github.com/$REPO/releases/download/v$VERSION"
             nsis=$(basename "${nsis_sig%.sig}"); nsis="${nsis// /.}"
