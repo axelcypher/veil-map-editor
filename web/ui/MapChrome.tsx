@@ -2,7 +2,7 @@
 import { signal } from '@preact/signals'
 import { formatKm } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { deleteVertices, freehand, freehandSmoothing, placeType, project, tool, type MeasureMode } from '../model/store'
+import { deleteVertices, freehand, freehandSmoothing, placeType, project, snapCities, tool, type MeasureMode } from '../model/store'
 import { mapView } from './mapRef'
 
 export const viewInfo = signal<{ resolution: number; centerLat: number; rotation: number }>({ resolution: 1, centerLat: 0, rotation: 0 })
@@ -66,6 +66,7 @@ const HINTS: Record<string, string> = {
   'area-island': 'Auf eine Insel klicken, um sie ganz hinzuzufügen.',
   vertices: 'Stützpunkte ziehen; auf die Linie ziehen fügt einen ein, Alt+Klick (oder „Löschen“ an) entfernt einen.',
   pick: 'Auf die Karte klicken, um den Punkt zu wählen.',
+  reshape: 'Strich an der Route beginnen und enden lassen: ersetzt den Abschnitt dazwischen. Nur an einem Ende: ersetzt das Ende bzw. verlängert die Route. Umschalt: freihand.',
 }
 const MEASURE_HINTS: Record<MeasureMode, string> = {
   ruler: 'Lineal: Start- und Endpunkt klicken. Gemessen wird auf dem Großkreis.',
@@ -95,8 +96,9 @@ export function ToolOptions() {
   if (t.id === 'measure') title = t.mode === 'ruler' ? 'Lineal' : t.mode === 'path' ? 'Opisometer' : 'Planimeter'
   if (t.id === 'vertices') title = 'Stützpunkte'
   if (t.id === 'pick') title = 'Punkt wählen'
+  if (t.id === 'reshape') title = 'Route umformen'
   const m = measurement.value
-  const drawing = t.id === 'draw-line' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract' || (t.id === 'measure' && t.mode !== 'ruler')
+  const drawing = t.id === 'draw-line' || t.id === 'reshape' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract' || (t.id === 'measure' && t.mode !== 'ruler')
   const act = (action: 'finish' | 'undo' | 'abort') => mapView.current?.drawAction(action)
   return (
     <div class="tool-options">
@@ -105,7 +107,7 @@ export function ToolOptions() {
       {t.id === 'place' && t.kind === 'marker' && typeSelect('marker', p.catalog.markerTypes.map(x => ({ id: x.id, name: `${x.icon} ${x.name}` })))}
       {t.id === 'draw-line' && t.kind === 'route' && typeSelect('route', p.catalog.routeTypes)}
       {t.id === 'measure' && m && m.mode === t.mode && <span class="measure-result">{m.text}</span>}
-      {(t.id === 'draw-line' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract') && (
+      {(t.id === 'draw-line' || t.id === 'reshape' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract') && (
         <label class="smoothing" title="Glättet Freihandstriche (Umschalt gedrückt) nach dem Loslassen; geklickte Ecken bleiben scharf">
           Glättung
           <input type="range" min={0} max={10} step={0.5} value={freehandSmoothing.value} onInput={e => (freehandSmoothing.value = Number((e.target as HTMLInputElement).value))} />
@@ -127,6 +129,11 @@ export function ToolOptions() {
             ✕
           </button>
         </span>
+      )}
+      {((t.id === 'draw-line' && t.kind === 'route') || t.id === 'reshape') && (
+        <button class={`small${snapCities.value ? ' active' : ''}`} title="Anfang und Ende rasten auf Städte ein, Punkte in der Nähe einer Stadt ebenso" onClick={() => (snapCities.value = !snapCities.value)}>
+          ● Städte einrasten
+        </button>
       )}
       {t.id === 'vertices' && (
         <button class={`small${deleteVertices.value ? ' active' : ''}`} title="Tippen auf einen Stützpunkt löscht ihn (statt Alt+Klick)" onClick={() => (deleteVertices.value = !deleteVertices.value)}>

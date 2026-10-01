@@ -6,9 +6,11 @@ import { defaultKoppenClasses } from './catalog'
 import { bboxHit, bboxOf, distanceM } from './geo'
 import { create, newId, newProject, parseProject, serializeProject } from './project'
 import {
-  addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, tool,
+  addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, snapCities, tool,
   updateEntity, type Tool,
 } from './store'
+import { avoidLand, followPoint, reshapeLine, snapEnds } from './routing'
+import { simplifyLine } from './geo'
 import {
   clearTerrain, imageLayerData, islandAt, loadImageLayerData, loadKoppenData, loadSatelliteData, loadTerrainData, koppen as koppenData,
   satellite as satelliteData, terrain,
@@ -544,7 +546,58 @@ function selectionState() {
 
 const collectionOf = (kind: AreaKind) => ({ state: 'states', province: 'provinces', culture: 'cultures', religion: 'religions', zone: 'zones' } as const)[kind]
 
-export function handleCreate(t: Tool, geometry: PointGeometry | LineGeometry) {
+/** screen pixels within which a route end snaps onto a city */
+const SNAP_PX = 12
+
+/** snapping onto cities, and for sea routes the way around the land; `px` is degrees per pixel */
+function finishRoute(line: LonLat[], typeId: string, px: number): LonLat[] {
+  const p = project.value
+  let out = snapCities.value ? snapEnds(line, p.cities, px * SNAP_PX) : line
+  const type = p.catalog.routeTypes.find(t => t.id === typeId)
+  if (type?.kind === 'sea' && terrain.value) {
+    const result = avoidLand(out, terrain.value.land, px * 2)
+    if (result.failed) notify('Ein Stück des Seewegs findet keinen Weg um das Land herum und bleibt wie gezeichnet.', 'error')
+    out = result.line
+  }
+  return out
+}
+
+/** a stroke drawn onto a route replaces the section it spans, or extends the route */
+export function reshapeRoute(id: string, stroke: LonLat[], px: number) {
+  const route = findEntity('route', id)
+  if (!route) return
+  const line = reshapeLine(route.geometry.coordinates, stroke, px * 15)
+  if (!line) {
+    notify('Der Strich muss an der Route beginnen oder enden.')
+    return
+  }
+  updateEntity('route', id, { geometry: { type: 'LineString', coordinates: finishRoute(line, route.type, px) } })
+}
+
+/** fewer points, so single ones can be dragged; `px` is degrees per pixel */
+export function simplifyRoute(id: string, px: number) {
+  const route = findEntity('route', id)
+  if (!route) return
+  const before = route.geometry.coordinates.length
+  const coordinates = simplifyLine(route.geometry.coordinates, px * 1.5)
+  if (coordinates.length === before) {
+    notify('Bei diesem Zoom lässt sich nichts weiter vereinfachen – zum Vereinfachen weiter herauszoomen.')
+    return
+  }
+  updateEntity('route', id, { geometry: { type: 'LineString', coordinates } })
+  notify(`${before} → ${coordinates.length} Stützpunkte.`, 'ok')
+}
+
+/** leads an existing sea route around the land */
+export function routeAroundLand(id: string, px: number) {
+  const route = findEntity('route', id)
+  if (!route || !terrain.value) return
+  const result = avoidLand(route.geometry.coordinates, terrain.value.land, px * 2)
+  if (result.changed) updateEntity('route', id, { geometry: { type: 'LineString', coordinates: result.line } })
+  notify(result.failed ? 'Nicht jedes Stück fand einen Weg um das Land herum.' : result.changed ? 'Der Seeweg führt jetzt um das Land herum.' : 'Der Seeweg kreuzt kein Land.', result.failed ? 'error' : 'ok')
+}
+
+export function handleCreate(t: Tool, geometry: PointGeometry | LineGeometry, px = 0) {
   const p = project.value
   if (t.id === 'place' && geometry.type === 'Point') {
     const at = geometry.coordinates
@@ -560,7 +613,10 @@ export function handleCreate(t: Tool, geometry: PointGeometry | LineGeometry) {
     return
   }
   if (t.id === 'draw-line' && geometry.type === 'LineString') {
-    if (t.kind === 'route') addEntity('route', create.route(p, geometry.coordinates, placeType.value.route ?? 'road'))
+    if (t.kind === 'route') {
+      const type = placeType.value.route ?? 'road'
+      addEntity('route', create.route(p, finishRoute(geometry.coordinates, type, px), type))
+    }
     else addEntity('label', create.label(p, geometry))
   }
 }
@@ -579,6 +635,14 @@ function inAreaQuick(g: AreaGeometry, [x, y]: LonLat) {
 }
 
 export function editGeometry(kind: EntityKind, id: string, geometry: unknown) {
+  const city = kind === 'city' ? findEntity('city', id) : undefined
+  if (city) {
+    // routes snapped onto the city move with it
+    const p = project.value
+    const at = (geometry as PointGeometry).coordinates
+    commit({ ...p, cities: p.cities.map(c => (c.id === id ? { ...c, geometry: geometry as PointGeometry } : c)), routes: followPoint(p.routes, city.geometry.coordinates, at) })
+    return
+  }
   updateEntity(kind, id, { geometry } as never)
 }
 

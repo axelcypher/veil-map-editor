@@ -1,15 +1,17 @@
 // Properties of the selected element.
 import { useEffect, useState } from 'preact/hooks'
-import { exclusiveAreas, fitProvinceToState, isArea } from '../model/actions'
+import { exclusiveAreas, fitProvinceToState, isArea, routeAroundLand, simplifyRoute } from '../model/actions'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { notify, patchProject, project, removeEntity, selectedEntity, selection, tool, updateEntity } from '../model/store'
-import { koppenAt } from '../model/terrain'
+import { notify, project, removeEntity, selectedEntity, selection, snapCities, tool, updateEntity } from '../model/store'
+import { cityAt } from '../model/routing'
+import { koppenAt, terrain } from '../model/terrain'
 import type { AreaBase, City, Culture, Entity, EntityKind, Label, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
 import { platform } from '../platform'
 import { regimentTotal } from '../map/styles'
 import { mapView } from './mapRef'
+import { openStateDialog } from './StateDialogs'
 import { NoteLink, NotePicker } from './NoteLink'
 import { obsidianUrl } from '../model/obsidian'
 import { Check, Color, Field, Num, Section, Select, Text } from './components'
@@ -97,12 +99,22 @@ function StateFields({ s }: { s: State }) {
         <Num value={s.ruralDensity} min={0} onChange={v => up({ ruralDensity: v } as Partial<State>, 'density')} />
       </Field>
       <StatsBlock stats={stats} />
-      <button
-        onClick={() => patchProject({ display: { ...p.display, diplomacyFocus: p.display.diplomacyFocus === s.id ? '' : s.id } })}
-        class={p.display.diplomacyFocus === s.id ? 'active' : ''}
-      >
-        Diplomatie aus Sicht dieses Staates
-      </button>
+      <Section title="Unterpunkte">
+        <div class="sub-items">
+          <button onClick={() => openStateDialog('diplomacy', s.id)} disabled={p.states.length < 2}>
+            <span>🤝 Diplomatie</span>
+            <span class="muted">{p.display.diplomacyFocus === s.id ? 'auf der Karte' : ''}</span>
+          </button>
+          <button onClick={() => openStateDialog('provinces', s.id)}>
+            <span>▦ Provinzen</span>
+            <span class="badge">{p.provinces.filter(x => x.stateId === s.id).length}</span>
+          </button>
+          <button onClick={() => openStateDialog('military', s.id)}>
+            <span>⚑ Militär</span>
+            <span class="badge">{p.regiments.filter(r => r.stateId === s.id).length}</span>
+          </button>
+        </div>
+      </Section>
     </>
   )
 }
@@ -335,18 +347,49 @@ function CityFields({ c }: { c: City }) {
 function RouteFields({ r }: { r: Route }) {
   const p = project.value
   const up = useUpdate('route', r.id)
+  const t = tool.value
+  const coords = r.geometry.coordinates
+  const start = cityAt(p.cities, coords[0])
+  const end = cityAt(p.cities, coords[coords.length - 1])
+  const sea = p.catalog.routeTypes.find(x => x.id === r.type)?.kind === 'sea'
+  const px = () => mapView.current?.resolution() ?? 0.01
+  const reshaping = t.id === 'reshape' && t.entityId === r.id
   return (
     <>
       <Field label="Typ">
         <Select value={r.type} onChange={v => up({ type: v } as Partial<Route>)} options={typeOptions(p.catalog.routeTypes)} />
       </Field>
       <dl class="stats">
+        <dt>Von</dt>
+        <dd>{start?.name ?? '–'}</dd>
+        <dt>Nach</dt>
+        <dd>{end?.name ?? '–'}</dd>
         <dt>Länge</dt>
-        <dd>{formatKm(lineLengthM(r.geometry.coordinates, p.planetRadius))}</dd>
+        <dd>{formatKm(lineLengthM(coords, p.planetRadius))}</dd>
         <dt>Stützpunkte</dt>
-        <dd>{r.geometry.coordinates.length}</dd>
+        <dd>{coords.length}</dd>
       </dl>
-      <p class="hint">Punkte ziehen zum Verschieben, auf der Linie ziehen fügt einen Punkt ein, Alt+Klick löscht einen.</p>
+      <Section title="Verlauf">
+        <div class="button-grid">
+          <button class={reshaping ? 'active' : ''} onClick={() => (tool.value = reshaping ? { id: 'select' } : { id: 'reshape', entityId: r.id })} title="Einen Abschnitt neu zeichnen oder die Route verlängern">
+            ✎ Neu zeichnen
+          </button>
+          <button onClick={() => simplifyRoute(r.id, px())} title="Überzählige Stützpunkte entfernen (abhängig vom Zoom), damit sich einzelne Punkte ziehen lassen">
+            ⋯ Vereinfachen
+          </button>
+          {sea && terrain.value && (
+            <button onClick={() => routeAroundLand(r.id, px())} title="Stücke, die über Land führen, um die Küste herumleiten">
+              ⚓ Land ausweichen
+            </button>
+          )}
+        </div>
+        <Check checked={snapCities.value} onChange={v => (snapCities.value = v)} label="An Städten einrasten" />
+        <p class="hint">
+          Punkte ziehen verschiebt sie, auf der Linie ziehen fügt einen ein, Alt+Klick löscht einen.
+          {coords.length > 150 && ' Freihand-Routen haben sehr viele Punkte: „Neu zeichnen“ formt einen Abschnitt um, „Vereinfachen“ dünnt sie aus.'}
+          {sea && ' Seewege weichen beim Zeichnen dem Land aus.'}
+        </p>
+      </Section>
     </>
   )
 }

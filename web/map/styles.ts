@@ -2,6 +2,8 @@
 // immutable, so a changed element is a new object and gets a new style.
 import type { FeatureLike } from 'ol/Feature'
 import type Geometry from 'ol/geom/Geometry'
+import type LineString from 'ol/geom/LineString'
+import MultiPoint from 'ol/geom/MultiPoint'
 import MultiPolygon from 'ol/geom/MultiPolygon'
 import Point from 'ol/geom/Point'
 import Polygon from 'ol/geom/Polygon'
@@ -257,7 +259,20 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
         const route = entity as Route
         const type = ctx.project.catalog.routeTypes.find(t => t.id === route.type)
         styles = [new Style({ stroke: new Stroke({ color: type?.color ?? '#8b5a2b', width: (type?.width ?? 1.5) * s.symbolScale, lineDash: dashOf(type?.dash ?? ''), lineCap: 'round' }) })]
-        if (selected) styles.unshift(new Style({ stroke: new Stroke({ color: SELECT_COLOR, width: (type?.width ?? 1.5) + 5 }) }))
+        if (selected) {
+          styles.unshift(new Style({ stroke: new Stroke({ color: SELECT_COLOR, width: (type?.width ?? 1.5) + 5 }) }))
+          // the points that can be dragged; a dense freehand line only shows its ends
+          const dense = route.geometry.coordinates.length > 150
+          styles.push(
+            new Style({
+              image: new Circle({ radius: 3.5, fill: new Fill({ color: '#ffffff' }), stroke: new Stroke({ color: '#7a5200', width: 1.5 }) }),
+              geometry: f => {
+                const coords = (f.getGeometry() as LineString).getCoordinates()
+                return new MultiPoint(dense ? [coords[0], coords[coords.length - 1]] : coords)
+              },
+            }),
+          )
+        }
         if (s.showLabels && route.name) styles.push(new Style({ text: textStyle(s, route.name, { placement: 'line' }) }))
         break
       }

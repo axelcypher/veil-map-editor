@@ -6,7 +6,7 @@ import { newId } from '../model/project'
 import { patchProject, project } from '../model/store'
 import type { Display, Filter, LayerId, LayerPreset } from '../model/types'
 import { platform } from '../platform'
-import { Check, Color, Field, Num, Range, Section, Select } from './components'
+import { Check, Color, Field, Num, PresetPicker, Range, Section, Select } from './components'
 
 function LayerList() {
   const p = project.value
@@ -71,41 +71,15 @@ function applyPreset(preset: LayerPreset) {
 
 function LayerPresets() {
   const p = project.value
-  const [name, setName] = useState('')
   return (
-    <>
-      <div class="preset-row">
-        {BUILTIN_LAYER_PRESETS.map(preset => (
-          <button key={preset.id} onClick={() => applyPreset(preset)}>
-            {preset.name}
-          </button>
-        ))}
-      </div>
-      {p.layerPresets.length > 0 && (
-        <div class="preset-row own">
-          {p.layerPresets.map(preset => (
-            <span key={preset.id} class="own-preset">
-              <button onClick={() => applyPreset(preset)}>{preset.name}</button>
-              <button class="small" title="Löschen" onClick={() => patchProject({ layerPresets: p.layerPresets.filter(x => x.id !== preset.id) })}>
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div class="inline">
-        <input type="text" placeholder="Name für eigenes Preset" value={name} onInput={e => setName((e.target as HTMLInputElement).value)} />
-        <button
-          disabled={!name.trim()}
-          onClick={() => {
-            patchProject({ layerPresets: [...p.layerPresets, { id: newId('lp'), name: name.trim(), layers: p.layers.map(l => ({ id: l.id, visible: l.visible })) }] })
-            setName('')
-          }}
-        >
-          Aktuelle Ebenen speichern
-        </button>
-      </div>
-    </>
+    <PresetPicker
+      builtin={BUILTIN_LAYER_PRESETS}
+      own={p.layerPresets}
+      apply={applyPreset}
+      remove={id => patchProject({ layerPresets: p.layerPresets.filter(x => x.id !== id) })}
+      save={name => patchProject({ layerPresets: [...p.layerPresets, { id: newId('lp'), name, layers: p.layers.map(l => ({ id: l.id, visible: l.visible })) }] })}
+      placeholder="Name für eigenes Preset"
+    />
   )
 }
 
@@ -149,13 +123,24 @@ function Filters() {
       <Field label="Anwenden auf">
         <Select value={target} onChange={v => setTarget(v)} options={[{ id: 'map' as const, name: 'ganze Karte' }, ...p.layers.map(l => ({ id: l.id, name: layerName(p, l.id) }))]} />
       </Field>
-      <div class="preset-row">
-        {FILTER_PRESETS.map(f => (
-          <button key={f.name} class="small" onClick={() => set({ ...neutralFilter(), ...f.filter })}>
-            {f.name}
-          </button>
-        ))}
-      </div>
+      <Field label="Vorlage">
+        <select
+          value=""
+          onChange={e => {
+            const f = FILTER_PRESETS.find(x => x.name === (e.target as HTMLSelectElement).value)
+            if (f) set({ ...neutralFilter(), ...f.filter })
+          }}
+        >
+          <option value="" disabled>
+            Filter wählen …
+          </option>
+          {FILTER_PRESETS.map(f => (
+            <option key={f.name} value={f.name}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </Field>
       <FilterEditor filter={current} onChange={set} />
     </>
   )

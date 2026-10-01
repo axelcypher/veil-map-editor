@@ -2,9 +2,10 @@
 import { useState } from 'preact/hooks'
 import { BUILTIN_STYLE_PRESETS, LAYER_NAMES } from '../model/catalog'
 import { newId } from '../model/project'
-import { patchProject, project } from '../model/store'
-import type { BuiltinLayerId, Catalog, LayerStyle, StylePreset } from '../model/types'
-import { Check, Color, Field, Num, Section, Select, Text } from './components'
+import { commit, patchProject, project } from '../model/store'
+import { koppen } from '../model/terrain'
+import type { BuiltinLayerId, Catalog, LayerStyle, Project } from '../model/types'
+import { Check, Color, Field, Num, PresetPicker, Section, Select, Text } from './components'
 
 const STYLED: BuiltinLayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
 const FONTS = [
@@ -97,44 +98,18 @@ function LayerStyleEditor({ id }: { id: BuiltinLayerId }) {
 
 function StylePresets() {
   const p = project.value
-  const [name, setName] = useState('')
-  const apply = (preset: StylePreset) =>
-    patchProject({ style: structuredClone(preset.style), display: { ...p.display, ...structuredClone(preset.display) } })
   return (
-    <>
-      <div class="preset-row">
-        {BUILTIN_STYLE_PRESETS.map(preset => (
-          <button key={preset.id} onClick={() => apply(preset)}>
-            {preset.name}
-          </button>
-        ))}
-      </div>
-      {p.stylePresets.length > 0 && (
-        <div class="preset-row own">
-          {p.stylePresets.map(preset => (
-            <span key={preset.id} class="own-preset">
-              <button onClick={() => apply(preset)}>{preset.name}</button>
-              <button class="small" title="Löschen" onClick={() => patchProject({ stylePresets: p.stylePresets.filter(x => x.id !== preset.id) })}>
-                ✕
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div class="inline">
-        <input type="text" placeholder="Name für eigenen Stil" value={name} onInput={e => setName((e.target as HTMLInputElement).value)} />
-        <button
-          disabled={!name.trim()}
-          onClick={() => {
-            const { background, mapFilter, layerFilters, texture, graticule } = p.display
-            patchProject({ stylePresets: [...p.stylePresets, { id: newId('sp'), name: name.trim(), style: structuredClone(p.style), display: structuredClone({ background, mapFilter, layerFilters, texture, graticule }) }] })
-            setName('')
-          }}
-        >
-          Aktuellen Stil speichern
-        </button>
-      </div>
-    </>
+    <PresetPicker
+      builtin={BUILTIN_STYLE_PRESETS}
+      own={p.stylePresets}
+      apply={preset => patchProject({ style: structuredClone(preset.style), display: { ...p.display, ...structuredClone(preset.display) } })}
+      remove={id => patchProject({ stylePresets: p.stylePresets.filter(x => x.id !== id) })}
+      save={name => {
+        const { background, mapFilter, layerFilters, texture, graticule } = p.display
+        patchProject({ stylePresets: [...p.stylePresets, { id: newId('sp'), name, style: structuredClone(p.style), display: structuredClone({ background, mapFilter, layerFilters, texture, graticule }) }] })
+      }}
+      placeholder="Name für eigenen Stil"
+    />
   )
 }
 
@@ -283,6 +258,49 @@ function ListEditor({ def }: { def: (typeof LISTS)[number] }) {
   )
 }
 
+function ClimateColors() {
+  const p = project.value
+  const data = koppen.value
+  const shares = data?.meta.shares ?? {}
+  const update = (code: string, patch: Partial<Project['koppenClasses'][number]>) =>
+    commit({ ...p, koppenClasses: p.koppenClasses.map(c => (c.code === code ? { ...c, ...patch } : c)) }, `koppen-${code}`)
+  return (
+    <>
+      <p class="hint">
+        Klimaklassen aus der Köppen-Karte (World Orogen). Farbe = Darstellung; die Zuordnungsfarben unter „Projekt → Import“ bestimmen, welche Pixel der Quelle zu welcher Klasse gehören.
+      </p>
+      <div class="table-scroll">
+        <table class="koppen">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Name</th>
+              <th>Farbe</th>
+              <th class="num">Anteil</th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.koppenClasses.map(c => (
+              <tr key={c.code}>
+                <td>
+                  <strong>{c.code}</strong>
+                </td>
+                <td>
+                  <input type="text" value={c.name} onInput={e => update(c.code, { name: (e.target as HTMLInputElement).value })} />
+                </td>
+                <td>
+                  <Color value={c.color} onChange={v => update(c.code, { color: v })} />
+                </td>
+                <td class="num">{shares[c.code] ? `${(shares[c.code] * 100).toFixed(1).replace('.', ',')} %` : '–'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  )
+}
+
 export function StylePanel() {
   const [layer, setLayer] = useState<BuiltinLayerId>('states')
   const [listKey, setListKey] = useState<ListKey>('cityTypes')
@@ -297,6 +315,9 @@ export function StylePanel() {
           <Select value={layer} onChange={setLayer} options={STYLED.map(id => ({ id, name: LAYER_NAMES[id] }))} />
         </Field>
         <LayerStyleEditor id={layer} />
+      </Section>
+      <Section title="Klimafarben (Köppen)" open={false}>
+        <ClimateColors />
       </Section>
       <Section title="Typen und Kategorien" open={false}>
         <Field label="Liste">

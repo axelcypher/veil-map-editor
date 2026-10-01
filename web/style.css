@@ -156,10 +156,9 @@ h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spac
 .section .chevron { color: var(--muted); width: 10px; }
 .section-body { padding: 2px 0 10px; display: flex; flex-direction: column; gap: 6px; }
 
-.tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 6px; border-bottom: 1px solid var(--line); }
-.tabs button { font-size: 12px; padding: 3px 8px; }
+.tabs { display: flex; padding: 6px; border-bottom: 1px solid var(--line); }
+.tabs select { flex: 1; min-width: 0; }
 .badge { display: inline-block; margin-left: 5px; min-width: 16px; padding: 0 4px; border-radius: 8px; background: #0005; font-size: 10.5px; }
-.tabs button.active .badge { background: #0002; }
 .overviews { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .overview-body { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .list-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -208,10 +207,8 @@ tr.selected { background: var(--accent-soft) !important; }
 .layer-list .layer-name { flex: 1; }
 .layer-list input[type="range"] { width: 70px; }
 .updown { display: flex; gap: 1px; }
-.preset-row { display: flex; flex-wrap: wrap; gap: 4px; }
-.own-preset { display: inline-flex; }
-.own-preset button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
-.own-preset button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.preset-picker { display: flex; flex-direction: column; gap: 4px; }
+.preset-picker select, .preset-picker input { flex: 1; min-width: 0; }
 .filter-editor { display: flex; flex-direction: column; gap: 3px; }
 .path { overflow: hidden; text-overflow: ellipsis; max-width: 160px; color: var(--muted); }
 .path-picker input { flex: 1; }
@@ -240,11 +237,6 @@ tr.selected { background: var(--accent-soft) !important; }
 .conflicts li:hover { background: var(--panel-2); }
 .warn-icon { color: var(--warn); }
 
-.diplomacy td { padding: 1px 2px; }
-.diplomacy td select { padding: 1px 2px; font-size: 11.5px; min-width: 96px; }
-.diplomacy td.self { background: repeating-linear-gradient(45deg, #0000, #0000 4px, #ffffff0d 4px, #ffffff0d 8px); }
-.diplomacy th.rotated { height: 110px; vertical-align: bottom; }
-.diplomacy th.rotated span { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; max-height: 104px; overflow: hidden; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
 .koppen input[type="text"] { padding: 1px 4px; }
 
@@ -370,3 +362,33 @@ tr.selected { background: var(--accent-soft) !important; }
 .image-layers .muted { font-size: 11.5px; white-space: nowrap; }
 
 .status-bar button.update { background: var(--accent); border-color: var(--accent-strong); color: var(--on-accent); }
+
+/* state dialogs: diplomacy, provinces, military */
+.sub-items { display: flex; flex-direction: column; gap: 4px; }
+.sub-items button { display: flex; justify-content: space-between; align-items: center; text-align: left; }
+.dialog-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.dialog-bar > select { flex: 1; min-width: 140px; }
+.dialog-switch { display: inline-flex; gap: 4px; }
+.relation-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.relation-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(90px, auto); gap: 8px; align-items: center; padding: 3px 6px; border-left: 4px solid; background: #ffffff08; border-radius: 3px; }
+.relation-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.relation-back { font-size: 11.5px; white-space: nowrap; }
+.edit-table { width: 100%; }
+.edit-table td { padding: 2px 4px; }
+.edit-table input[type="text"], .edit-table select { width: 100%; min-width: 90px; }
+.edit-table .narrow input { width: 70px; }
+.edit-table .name-cell { display: flex; gap: 4px; align-items: center; }
+.edit-table .row-actions { white-space: nowrap; }
+.military-sum { margin: 6px 0 10px; }
+.regiments { display: flex; flex-direction: column; gap: 8px; }
+.regiment-card { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.regiment-card header { display: flex; gap: 6px; align-items: center; }
+.regiment-card header input { flex: 1; min-width: 0; font-weight: 600; }
+.regiment-total { min-width: 60px; text-align: right; }
+.regiment-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 10px; margin-top: 6px; }
+.regiment-fields label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.regiment-fields input, .regiment-fields select { color: var(--text); }
+@media (max-width: 600px) {
+  .relation-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .relation-back { grid-column: 1 / -1; }
+}

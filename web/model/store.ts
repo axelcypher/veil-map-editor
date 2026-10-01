@@ -22,6 +22,7 @@ export type Tool =
   | { id: 'area-new'; kind: AreaKind }
   | { id: 'area-add' | 'area-subtract' | 'area-island'; kind: AreaKind; entityId: string }
   | { id: 'vertices' }
+  | { id: 'reshape'; entityId: string }
   | { id: 'measure'; mode: MeasureMode }
   | { id: 'pick'; purpose: string }
 
@@ -49,6 +50,16 @@ freehandSmoothing.subscribe(value => {
 export const freehand = signal(false)
 /** a tap on a vertex deletes it, instead of Alt+click */
 export const deleteVertices = signal(false)
+
+/** route points snap onto cities; remembered per machine */
+export const snapCities = signal(storedNumber('veil.snapCities', 1) === 1)
+snapCities.subscribe(value => {
+  try {
+    localStorage.setItem('veil.snapCities', value ? '1' : '0')
+  } catch {
+    /* storage blocked */
+  }
+})
 
 export const placeType = signal<Record<string, string>>({ marker: 'poi', route: 'road', city: 'town' })
 /** a coordinate picked on the map for a form (control points) */

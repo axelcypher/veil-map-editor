@@ -141,11 +141,12 @@ export function smoothStroke(coords: LonLat[], closed: boolean, strength: number
     }
     return [x / weight, y / weight]
   })
-  const simplified = simplify(closed ? [...smoothed, smoothed[0]] : smoothed, step * 0.25)
+  const simplified = simplifyLine(closed ? [...smoothed, smoothed[0]] : smoothed, step * 0.25)
   return simplified.map(([x, y]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5])
 }
 
-function simplify(points: LonLat[], tolerance: number): LonLat[] {
+/** Douglas–Peucker; the ends stay */
+export function simplifyLine(points: LonLat[], tolerance: number): LonLat[] {
   if (points.length < 3) return points
   const keep = new Uint8Array(points.length)
   keep[0] = keep[points.length - 1] = 1

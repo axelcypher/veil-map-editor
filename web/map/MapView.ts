@@ -7,7 +7,7 @@ import type Geometry from 'ol/geom/Geometry'
 import LineString from 'ol/geom/LineString'
 import Point from 'ol/geom/Point'
 import Polygon from 'ol/geom/Polygon'
-import { defaults as defaultInteractions, Draw, Modify, Translate } from 'ol/interaction'
+import { defaults as defaultInteractions, Draw, Modify, Snap, Translate } from 'ol/interaction'
 import type Interaction from 'ol/interaction/Interaction'
 import type BaseLayer from 'ol/layer/Base'
 import Graticule from 'ol/layer/Graticule'
@@ -27,7 +27,7 @@ import type { EventsKey } from 'ol/events'
 import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { isImageLayer } from '../model/catalog'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
-import { deleteVertices, freehand, freehandSmoothing, type MeasureMode, type Tool } from '../model/store'
+import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMode, type Tool } from '../model/store'
 import { altKeyOnly, shiftKeyOnly, singleClick } from 'ol/events/condition'
 import type MapBrowserEvent from 'ol/MapBrowserEvent'
 import { shownGeometry } from '../model/terrain'
@@ -62,7 +62,10 @@ const COLLECTIONS: Record<EntityKind, keyof Project> = {
 
 export interface MapEvents {
   select(kind: EntityKind | null, id: string | null): void
-  create(tool: Tool, geometry: { type: 'Point'; coordinates: LonLat } | LineGeometry): void
+  /** `px`: degrees per screen pixel when drawn */
+  create(tool: Tool, geometry: { type: 'Point'; coordinates: LonLat } | LineGeometry, px: number): void
+  /** a stroke drawn onto a route */
+  reshape(id: string, stroke: LonLat[], px: number): void
   editGeometry(kind: EntityKind, id: string, geometry: Entity['geometry']): void
   area(tool: Tool, polygon: LonLat[][], at: LonLat): void
   pick(purpose: string, at: LonLat): void
@@ -195,6 +198,9 @@ export class MapView {
     })
     this.map.addLayer(edit)
     this.map.addLayer(measure)
+    snapCities.subscribe(on => {
+      for (const interaction of this.interactions) if (interaction instanceof Snap) interaction.setActive(on)
+    })
 
     const tip = document.createElement('div')
     tip.className = 'measure-tip'
@@ -522,6 +528,12 @@ export class MapView {
       this.map.addInteraction(interaction)
       if (interaction instanceof Draw) this.activeDraw = interaction
     }
+    // last, so it sees the pointer before the drawing or dragging does
+    const snapToCities = () => {
+      const snap = new Snap({ source: this.sources.city, edge: false, pixelTolerance: 12 })
+      snap.setActive(snapCities.peek())
+      add(snap)
+    }
     const target = this.map.getTargetElement()
     if (target) target.style.cursor = tool.id === 'select' ? '' : 'crosshair'
     if (tool.id !== 'measure') {
@@ -541,6 +553,7 @@ export class MapView {
         const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
+        if (s.kind === 'route') snapToCities()
       }
     }
     if (tool.id === 'vertices' && s) {
@@ -557,9 +570,20 @@ export class MapView {
         const geometry = fromOl(event.feature.getGeometry()!) as LineGeometry
         setTimeout(() => this.measureSource.clear())
         geometry.coordinates = this.smooth(geometry.coordinates, false)
-        this.events.create(tool, geometry)
+        this.events.create(tool, geometry, this.resolution())
       })
       add(draw)
+      if (tool.kind === 'route') snapToCities()
+    }
+    if (tool.id === 'reshape') {
+      const draw = new Draw({ type: 'LineString', source: this.measureSource, freehandCondition })
+      draw.on('drawend', event => {
+        const coords = (event.feature.getGeometry() as LineString).getCoordinates() as LonLat[]
+        setTimeout(() => this.measureSource.clear())
+        this.events.reshape(tool.entityId, this.smooth(coords, false), this.resolution())
+      })
+      add(draw)
+      snapToCities()
     }
     if (tool.id === 'area-new' || tool.id === 'area-add' || tool.id === 'area-subtract') {
       const draw = new Draw({ type: 'Polygon', source: this.measureSource, freehandCondition })
@@ -638,7 +662,7 @@ export class MapView {
       return
     }
     if (tool.id === 'place') {
-      this.events.create(tool, { type: 'Point', coordinates: at })
+      this.events.create(tool, { type: 'Point', coordinates: at }, this.resolution())
       return
     }
     if (tool.id === 'area-island') {

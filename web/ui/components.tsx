@@ -90,16 +90,102 @@ export function Section({ title, children, open = true, actions }: { title: stri
   )
 }
 
+/** one compact list instead of a row of buttons, so it takes a single line on a phone */
 export function Tabs<T extends string>({ tabs, active, onChange }: { tabs: { id: T; name: string; badge?: number }[]; active: T; onChange: (id: T) => void }) {
   return (
     <nav class="tabs">
-      {tabs.map(t => (
-        <button key={t.id} class={t.id === active ? 'active' : ''} onClick={() => onChange(t.id)}>
-          {t.name}
-          {t.badge ? <span class="badge">{t.badge}</span> : null}
-        </button>
-      ))}
+      <select value={active} onChange={e => onChange((e.target as HTMLSelectElement).value as T)} aria-label="Übersicht">
+        {tabs.map(t => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+            {t.badge ? ` (${t.badge})` : ''}
+          </option>
+        ))}
+      </select>
     </nav>
+  )
+}
+
+interface PresetItem {
+  id: string
+  name: string
+}
+/**
+ * Built-in and own presets in one list: choosing one applies it. The own ones can be deleted,
+ * and the current state saved under a new name.
+ */
+export function PresetPicker<P extends PresetItem>({ builtin, own, apply, remove, save, placeholder }: {
+  builtin: P[]
+  own: P[]
+  apply: (preset: P) => void
+  remove: (id: string) => void
+  save: (name: string) => void
+  placeholder: string
+}) {
+  const [chosen, setChosen] = useState('')
+  const [name, setName] = useState('')
+  const find = (id: string) => builtin.find(x => x.id === id) ?? own.find(x => x.id === id)
+  const current = find(chosen)
+  const isOwn = own.some(x => x.id === chosen)
+  return (
+    <div class="preset-picker">
+      <div class="inline">
+        <select
+          value={current ? chosen : ''}
+          onChange={e => {
+            const id = (e.target as HTMLSelectElement).value
+            setChosen(id)
+            const preset = find(id)
+            if (preset) apply(preset)
+          }}
+        >
+          <option value="" disabled>
+            Preset wählen …
+          </option>
+          {builtin.map(x => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+          {own.length > 0 && (
+            <optgroup label="Eigene">
+              {own.map(x => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <button class="small" title="Erneut anwenden" disabled={!current} onClick={() => current && apply(current)}>
+          ↻
+        </button>
+        <button
+          class="small"
+          title="Eigenes Preset löschen"
+          disabled={!isOwn}
+          onClick={() => {
+            remove(chosen)
+            setChosen('')
+          }}
+        >
+          🗑
+        </button>
+      </div>
+      <div class="inline">
+        <input type="text" placeholder={placeholder} value={name} onInput={e => setName((e.target as HTMLInputElement).value)} />
+        <button
+          disabled={!name.trim()}
+          title="Aktuellen Zustand als eigenes Preset speichern"
+          onClick={() => {
+            save(name.trim())
+            setName('')
+          }}
+        >
+          Speichern
+        </button>
+      </div>
+    </div>
   )
 }
 

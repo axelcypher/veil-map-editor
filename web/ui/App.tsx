@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
-import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
+import { confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, reshapeRoute, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
 import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
@@ -16,6 +16,7 @@ import { mapView } from './mapRef'
 import { Overviews, type OverviewId } from './Overviews'
 import { ProjectPanel } from './ProjectPanel'
 import { StylePanel } from './StylePanel'
+import { StateDialogs } from './StateDialogs'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { Modal } from './components'
@@ -247,7 +248,8 @@ function useMap(container: { current: HTMLDivElement | null }) {
     if (!container.current) return
     const view = new MapView(container.current, project.value, {
       select: (kind, id) => (selection.value = kind && id ? { kind, id } : null),
-      create: (t, geometry) => handleCreate(t, geometry),
+      create: (t, geometry, px) => handleCreate(t, geometry, px),
+      reshape: (id, stroke, px) => reshapeRoute(id, stroke, px),
       editGeometry: (kind, id, geometry) => editGeometry(kind, id, geometry),
       area: (t, polygon, at) => handleArea(t, polygon, at),
       pick: (purpose, at) => {
@@ -430,6 +432,7 @@ export function App() {
       <StatusBar />
       {show3d && <View3D onClose={() => setShow3d(false)} />}
       <Notices />
+      <StateDialogs />
       <ConfirmDialog />
     </div>
   )

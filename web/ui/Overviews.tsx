@@ -1,17 +1,16 @@
-// Lists of everything on the map, plus diplomacy, military, charts, conflicts and climate.
+// Lists of everything on the map, plus charts and conflicts. Provinces, military and diplomacy
+// belong to a state and open from its inspector (StateDialogs).
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { conflicts, findConflicts } from '../model/actions'
 import { cityMembership, cultureStats, militaryTotals, provinceStats, religionStats, stateStats } from '../model/derive'
 import { formatInt, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { commit, list, patchProject, project, selection, tool } from '../model/store'
-import { koppen } from '../model/terrain'
+import { list, patchProject, project, selection, tool } from '../model/store'
 import { AREA_KINDS, type AreaKind, type EntityKind, type Project } from '../model/types'
-import { regimentTotal } from '../map/styles'
 import { mapView } from './mapRef'
-import { Color, Section, Swatch, Table, Tabs, type Column } from './components'
+import { Section, Swatch, Table, Tabs, type Column } from './components'
 
-export type OverviewId = 'states' | 'provinces' | 'cultures' | 'religions' | 'zones' | 'cities' | 'routes' | 'rivers' | 'markers' | 'labels' | 'military' | 'diplomacy' | 'charts' | 'conflicts' | 'climate'
+export type OverviewId = 'states' | 'cultures' | 'religions' | 'zones' | 'cities' | 'routes' | 'rivers' | 'markers' | 'labels' | 'charts' | 'conflicts'
 
 const pick = (kind: EntityKind, id: string) => {
   selection.value = { kind, id }
@@ -177,154 +176,6 @@ function LabelList() {
   )
 }
 
-function Military() {
-  const p = project.value
-  const totals = militaryTotals.value
-  const units = p.catalog.unitTypes
-  const stateRows = [...p.states.map(s => ({ id: s.id, name: s.name, color: s.color })), ...(totals.has('') ? [{ id: '', name: 'ohne Staat', color: '#999999' }] : [])]
-  const regimentColumns: Column<Project['regiments'][number]>[] = [
-    { id: 'name', name: 'Regiment', value: r => r.name },
-    { id: 'state', name: 'Staat', value: r => nameIn(p.states, r.stateId) },
-    { id: 'kind', name: 'Art', value: r => (r.naval ? 'Flotte' : 'Heer') },
-    { id: 'total', name: 'Stärke', numeric: true, value: r => regimentTotal(r), render: r => formatInt(regimentTotal(r)) },
-    { id: 'cmd', name: 'Befehlshaber', value: r => r.commander },
-  ]
-  return (
-    <>
-      <div class="list-actions">
-        <button class="primary" onClick={() => (tool.value = { id: 'place', kind: 'regiment' })}>
-          ＋ Regiment setzen
-        </button>
-      </div>
-      <Section title="Streitkräfte je Staat">
-        <div class="table-scroll military">
-          <table>
-            <thead>
-              <tr>
-                <th>Staat</th>
-                {units.map(u => (
-                  <th key={u.id} class="num" title={u.name}>
-                    {u.symbol}
-                  </th>
-                ))}
-                <th class="num">Gesamt</th>
-                <th class="num" title="Soldaten je 1.000 Einwohner">‰ Ew.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stateRows.map(s => {
-                const t = totals.get(s.id) ?? {}
-                const sum = Object.values(t).reduce((a, b) => a + b, 0)
-                const stats = stateStats.value.get(s.id)
-                const pop = stats ? stats.urban + stats.rural : 0
-                return (
-                  <tr key={s.id} onClick={() => s.id && pick('state', s.id)}>
-                    <td>
-                      <Swatch color={s.color} /> {s.name}
-                    </td>
-                    {units.map(u => (
-                      <td key={u.id} class="num">
-                        {t[u.id] ? formatInt(t[u.id]) : '–'}
-                      </td>
-                    ))}
-                    <td class="num">
-                      <strong>{formatInt(sum)}</strong>
-                    </td>
-                    <td class="num">{pop > 0 ? ((sum / pop) * 1000).toFixed(1).replace('.', ',') : '–'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div class="legend">
-          {units.map(u => (
-            <span key={u.id}>
-              {u.symbol} {u.name}
-            </span>
-          ))}
-        </div>
-      </Section>
-      <Table rows={p.regiments} columns={regimentColumns} selectedId={selection.value?.id} onRow={r => pick('regiment', r.id)} groupBy={[regimentColumns[1], regimentColumns[2]]} />
-    </>
-  )
-}
-
-function Diplomacy() {
-  const p = project.value
-  const relations = p.catalog.relations
-  const set = (a: string, b: string, relation: string) => {
-    const mirror = relations.find(r => r.id === relation)?.mirror ?? relation
-    const diplomacy = { ...p.diplomacy, [`${a}>${b}`]: relation, [`${b}>${a}`]: mirror }
-    commit({ ...p, diplomacy })
-  }
-  if (p.states.length < 2) return <p class="empty">Mindestens zwei Staaten anlegen.</p>
-  return (
-    <>
-      <p class="hint">Zeile: Sicht des Staates auf die Spalte. Gegenseitige Beziehungen werden gespiegelt (Vasall ↔ Lehnsherr).</p>
-      <div class="list-actions">
-        <label>
-          Karte einfärben aus Sicht von{' '}
-          <select value={p.display.diplomacyFocus} onChange={e => patchProject({ display: { ...p.display, diplomacyFocus: (e.target as HTMLSelectElement).value } })}>
-            <option value="">— aus —</option>
-            {p.states.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div class="table-scroll diplomacy">
-        <table>
-          <thead>
-            <tr>
-              <th />
-              {p.states.map(s => (
-                <th key={s.id} class="rotated" title={s.name}>
-                  <span>{s.name}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {p.states.map(a => (
-              <tr key={a.id}>
-                <th>
-                  <Swatch color={a.color} /> {a.name}
-                </th>
-                {p.states.map(b => {
-                  if (a.id === b.id) return <td key={b.id} class="self" />
-                  const value = p.diplomacy[`${a.id}>${b.id}`] ?? 'neutral'
-                  const relation = relations.find(r => r.id === value)
-                  return (
-                    <td key={b.id} style={{ boxShadow: `inset 4px 0 0 ${relation?.color ?? '#ccc'}` }}>
-                      <select value={value} onChange={e => set(a.id, b.id, (e.target as HTMLSelectElement).value)}>
-                        {relations.map(r => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div class="legend">
-        {relations.map(r => (
-          <span key={r.id}>
-            <Swatch color={r.color} /> {r.name}
-          </span>
-        ))}
-      </div>
-    </>
-  )
-}
-
 // ---------------------------------------------------------------------------------------------
 // charts: one measure per chart, bars sorted, each bar in the element's map colour
 
@@ -458,54 +309,10 @@ function Conflicts() {
   )
 }
 
-function Climate() {
-  const p = project.value
-  const data = koppen.value
-  const shares = data?.meta.shares ?? {}
-  const update = (code: string, patch: Partial<Project['koppenClasses'][number]>) =>
-    commit({ ...p, koppenClasses: p.koppenClasses.map(c => (c.code === code ? { ...c, ...patch } : c)) }, `koppen-${code}`)
-  return (
-    <>
-      <p class="hint">
-        Klimaklassen aus der Köppen-Karte (World Orogen). Farbe = Darstellung; die Zuordnungsfarben unter „Projekt → Import“ bestimmen, welche Pixel der Quelle zu welcher Klasse gehören.
-      </p>
-      <div class="table-scroll">
-        <table class="koppen">
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Farbe</th>
-              <th class="num">Anteil</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.koppenClasses.map(c => (
-              <tr key={c.code}>
-                <td>
-                  <strong>{c.code}</strong>
-                </td>
-                <td>
-                  <input type="text" value={c.name} onInput={e => update(c.code, { name: (e.target as HTMLInputElement).value })} />
-                </td>
-                <td>
-                  <Color value={c.color} onChange={v => update(c.code, { color: v })} />
-                </td>
-                <td class="num">{shares[c.code] ? `${(shares[c.code] * 100).toFixed(1).replace('.', ',')} %` : '–'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
-  )
-}
-
 export function Overviews({ active, onChange }: { active: OverviewId; onChange: (id: OverviewId) => void }) {
   const p = project.value
   const tabs: { id: OverviewId; name: string; badge?: number }[] = [
     { id: 'states', name: 'Staaten', badge: p.states.length },
-    { id: 'provinces', name: 'Provinzen', badge: p.provinces.length },
     { id: 'cultures', name: 'Kulturen', badge: p.cultures.length },
     { id: 'religions', name: 'Religionen', badge: p.religions.length },
     { id: 'zones', name: 'Zonen', badge: p.zones.length },
@@ -514,13 +321,10 @@ export function Overviews({ active, onChange }: { active: OverviewId; onChange: 
     { id: 'rivers', name: 'Flüsse', badge: p.rivers.length },
     { id: 'markers', name: 'Marker', badge: p.markers.length },
     { id: 'labels', name: 'Beschriftungen', badge: p.labels.length },
-    { id: 'military', name: 'Militär', badge: p.regiments.length },
-    { id: 'diplomacy', name: 'Diplomatie' },
     { id: 'charts', name: 'Diagramme' },
-    { id: 'climate', name: 'Klima' },
     { id: 'conflicts', name: 'Konflikte', badge: conflicts.value.length },
   ]
-  const areaOf: Partial<Record<OverviewId, AreaKind>> = { states: 'state', provinces: 'province', cultures: 'culture', religions: 'religion', zones: 'zone' }
+  const areaOf: Partial<Record<OverviewId, AreaKind>> = { states: 'state', cultures: 'culture', religions: 'religion', zones: 'zone' }
   const area = areaOf[active]
   return (
     <div class="overviews">
@@ -532,11 +336,8 @@ export function Overviews({ active, onChange }: { active: OverviewId; onChange: 
         {active === 'rivers' && <RiverList />}
         {active === 'markers' && <MarkerList />}
         {active === 'labels' && <LabelList />}
-        {active === 'military' && <Military />}
-        {active === 'diplomacy' && <Diplomacy />}
         {active === 'charts' && <Charts />}
         {active === 'conflicts' && <Conflicts />}
-        {active === 'climate' && <Climate />}
       </div>
     </div>
   )
