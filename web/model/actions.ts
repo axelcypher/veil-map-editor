@@ -9,7 +9,7 @@ import {
   addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, snapCities, tool,
   updateEntity, type Tool,
 } from './store'
-import { avoidLand, followPoint, reshapeLine, snapEnds } from './routing'
+import { avoidLand, dockEnds, followPoint, reshapeLine, settleJunctions, snapEnds } from './routing'
 import { simplifyLine } from './geo'
 import {
   clearTerrain, imageLayerData, islandAt, loadImageLayerData, loadKoppenData, loadSatelliteData, loadTerrainData, koppen as koppenData,
@@ -17,7 +17,7 @@ import {
 } from './terrain'
 import {
   AREA_KINDS, type AreaBase, type AreaGeometry, type AreaKind, type EntityKind, type KoppenMatch, type LineGeometry, type LonLat,
-  type PointGeometry, type Project, type River,
+  type PointGeometry, type Project, type River, type Route,
 } from './types'
 
 export const PROJECT_FILTER = [{ name: 'VEIL-Projekt oder -Archiv', extensions: ['veil', 'veilmap'] }]
@@ -714,6 +714,25 @@ function finishRoute(line: LonLat[], typeId: string, px: number): LonLat[] {
   return out
 }
 
+/**
+ * Puts a route's new line into the project: the routes docked onto it follow, and its ends dock
+ * onto other routes (a branch, a join) when snapping is on. `before`: the old line, if any.
+ */
+function placeRoute(p: Project, route: Route, before: LonLat[] | null, px: number): Project {
+  let routes = p.routes.some(r => r.id === route.id) ? p.routes.map(r => (r.id === route.id ? route : r)) : [...p.routes, route]
+  routes = settleJunctions(routes, route.id, before, p.cities)
+  if (snapCities.value && px > 0) routes = dockEnds(routes, route.id, p.cities, px * SNAP_PX)
+  return { ...p, routes }
+}
+
+/** a changed line for an existing route, with everything docked onto it */
+function changeRouteLine(id: string, coordinates: LonLat[], px = 0) {
+  const p = project.value
+  const route = p.routes.find(r => r.id === id)
+  if (!route) return
+  commit(placeRoute(p, { ...route, geometry: { type: 'LineString', coordinates } }, route.geometry.coordinates, px))
+}
+
 /** a stroke drawn onto a route replaces the section it spans, or extends the route */
 export function reshapeRoute(id: string, stroke: LonLat[], px: number) {
   const route = findEntity('route', id)
@@ -723,7 +742,7 @@ export function reshapeRoute(id: string, stroke: LonLat[], px: number) {
     notify('Der Strich muss an der Route beginnen oder enden.')
     return
   }
-  updateEntity('route', id, { geometry: { type: 'LineString', coordinates: finishRoute(line, route.type, px) } })
+  changeRouteLine(id, finishRoute(line, route.type, px), px)
 }
 
 /** fewer points, so single ones can be dragged; `px` is degrees per pixel */
@@ -736,7 +755,7 @@ export function simplifyRoute(id: string, px: number) {
     notify('Bei diesem Zoom lässt sich nichts weiter vereinfachen – zum Vereinfachen weiter herauszoomen.')
     return
   }
-  updateEntity('route', id, { geometry: { type: 'LineString', coordinates } })
+  changeRouteLine(id, coordinates)
   notify(`${before} → ${coordinates.length} Stützpunkte.`, 'ok')
 }
 
@@ -745,7 +764,7 @@ export function routeAroundLand(id: string, px: number) {
   const route = findEntity('route', id)
   if (!route || !terrain.value) return
   const result = avoidLand(route.geometry.coordinates, terrain.value.land, px * 2)
-  if (result.changed) updateEntity('route', id, { geometry: { type: 'LineString', coordinates: result.line } })
+  if (result.changed) changeRouteLine(id, result.line)
   notify(result.failed ? 'Nicht jedes Stück fand einen Weg um das Land herum.' : result.changed ? 'Der Seeweg führt jetzt um das Land herum.' : 'Der Seeweg kreuzt kein Land.', result.failed ? 'error' : 'ok')
 }
 
@@ -767,7 +786,9 @@ export function handleCreate(t: Tool, geometry: PointGeometry | LineGeometry, px
   if (t.id === 'draw-line' && geometry.type === 'LineString') {
     if (t.kind === 'route') {
       const type = placeType.value.route ?? 'road'
-      addEntity('route', create.route(p, finishRoute(geometry.coordinates, type, px), type))
+      const route = create.route(p, finishRoute(geometry.coordinates, type, px), type)
+      commit(placeRoute(p, route, null, px))
+      selection.value = { kind: 'route', id: route.id }
     }
     else addEntity('label', create.label(p, geometry))
   }
@@ -787,6 +808,11 @@ function inAreaQuick(g: AreaGeometry, [x, y]: LonLat) {
 }
 
 export function editGeometry(kind: EntityKind, id: string, geometry: unknown) {
+  if (kind === 'route') {
+    // a dragged point: docked routes follow, the own ends dock again where they were snapped
+    changeRouteLine(id, (geometry as LineGeometry).coordinates)
+    return
+  }
   const city = kind === 'city' ? findEntity('city', id) : undefined
   if (city) {
     // routes snapped onto the city move with it

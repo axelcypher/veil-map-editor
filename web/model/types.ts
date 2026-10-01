@@ -89,6 +89,8 @@ export interface City extends Base {
 export interface Route extends Base {
   geometry: LineGeometry
   type: string
+  /** docked onto other routes: branches off one at its start, joins one at its end */
+  junctions?: { start?: string; end?: string }
 }
 
 export interface River extends Base {

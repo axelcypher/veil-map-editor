@@ -164,8 +164,12 @@ export function ToolOptions() {
         </span>
       )}
       {((t.id === 'draw-line' && t.kind === 'route') || t.id === 'reshape') && (
-        <button class={`small${snapCities.value ? ' active' : ''}`} title="Anfang und Ende rasten auf Städte ein, Punkte in der Nähe einer Stadt ebenso" onClick={() => (snapCities.value = !snapCities.value)}>
-          ● Städte einrasten
+        <button
+          class={`small${snapCities.value ? ' active' : ''}`}
+          title="Punkte rasten auf Städte und auf andere Routen ein. Beginnt oder endet die Route auf einer anderen, wird sie zum Abzweig bzw. mündet ein."
+          onClick={() => (snapCities.value = !snapCities.value)}
+        >
+          ● Einrasten
         </button>
       )}
       {t.id === 'vertices' && (

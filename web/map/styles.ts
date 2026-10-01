@@ -3,11 +3,13 @@
 import type { FeatureLike } from 'ol/Feature'
 import type Geometry from 'ol/geom/Geometry'
 import type LineString from 'ol/geom/LineString'
+import LineStringGeom from 'ol/geom/LineString'
 import MultiPoint from 'ol/geom/MultiPoint'
 import MultiPolygon from 'ol/geom/MultiPolygon'
 import Point from 'ol/geom/Point'
 import Polygon from 'ol/geom/Polygon'
 import { Circle, Fill, Icon, RegularShape, Stroke, Style, Text } from 'ol/style'
+import { fullPath } from '../model/routing'
 import type { City, Entity, EntityKind, Label, LayerStyle, Marker, Project, Regiment, River, Route, Zone, ZonePattern } from '../model/types'
 
 export const SELECT_COLOR = '#f2b134'
@@ -217,7 +219,8 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
     const bucket = resolution > 0.25 ? 0 : resolution > 0.06 ? 1 : 2
     const key = `${selected}|${bucket}|${styleVersion()}|${ctx.diplomacyColors?.get(entity.id) ?? ''}`
     const hit = cache.get(entity)
-    if (hit && hit.key === key) return hit.styles
+    // the selected route shows the routes it is docked onto, which change without it
+    if (hit && hit.key === key && !(selected && kind === 'route')) return hit.styles
     let styles: Style[] = []
     switch (kind) {
       case 'state':
@@ -261,6 +264,11 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
         styles = [new Style({ stroke: new Stroke({ color: type?.color ?? '#8b5a2b', width: (type?.width ?? 1.5) * s.symbolScale, lineDash: dashOf(type?.dash ?? ''), lineCap: 'round' }) })]
         if (selected) {
           styles.unshift(new Style({ stroke: new Stroke({ color: SELECT_COLOR, width: (type?.width ?? 1.5) + 5 }) }))
+          // the shared stretches on other routes (branch, join): the whole way, faint
+          const whole = fullPath(ctx.project.routes, route.id)
+          if (whole.before.length || whole.after.length) {
+            styles.unshift(new Style({ geometry: new LineStringGeom(whole.path), stroke: new Stroke({ color: rgba(SELECT_COLOR, 0.45), width: (type?.width ?? 1.5) + 5, lineDash: [8, 6] }) }))
+          }
           // the points that can be dragged; a dense freehand line only shows its ends
           const dense = route.geometry.coordinates.length > 150
           styles.push(

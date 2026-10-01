@@ -2,6 +2,7 @@
 // a list of earlier roots and lets the map see what changed by reference.
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
+import { dropJunctionsTo } from './routing'
 import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
 
 export const project = signal<Project>(newProject())
@@ -223,6 +224,7 @@ export function removeEntity(kind: EntityKind, id: string) {
     }
   }
   if (kind === 'river') next = { ...next, rivers: next.rivers.map(r => (r.parentId === id ? { ...r, parentId: '' } : r)) }
+  if (kind === 'route') next = { ...next, routes: dropJunctionsTo(next.routes, id) }
   commit(next)
   if (selection.value?.id === id) selection.value = null
 }

@@ -4,6 +4,7 @@ import { platform } from '../platform'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats } from './derive'
 import { areaKm2, lineLengthM } from './geo'
 import { readFrontmatter } from './obsidian'
+import { fullPath } from './routing'
 import { notify, project } from './store'
 import { clippedGeometry } from './terrain'
 import type { AreaBase, Entity, EntityKind, Project } from './types'
@@ -80,7 +81,16 @@ async function properties(p: Project, kind: EntityKind, entity: Entity, withFron
     }
     case 'route': {
       const x = entity as Project['routes'][number]
-      Object.assign(base, { type: typeName(c.routeTypes, x.type), lengthKm: Math.round(lineLengthM(x.geometry.coordinates, p.planetRadius) / 1000) })
+      const whole = fullPath(p.routes, x.id)
+      const nameOf = (id: string | undefined) => (id ? p.routes.find(r => r.id === id)?.name || id : undefined)
+      Object.assign(base, {
+        type: typeName(c.routeTypes, x.type),
+        // the whole way, shared stretches on other routes included; the geometry is the own part
+        lengthKm: Math.round(lineLengthM(whole.path, p.planetRadius) / 1000),
+        ownLengthKm: Math.round(lineLengthM(x.geometry.coordinates, p.planetRadius) / 1000),
+        branchOf: nameOf(x.junctions?.start),
+        joins: nameOf(x.junctions?.end),
+      })
       break
     }
     case 'river': {

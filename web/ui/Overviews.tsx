@@ -5,6 +5,7 @@ import { conflicts, findConflicts } from '../model/actions'
 import { cityMembership, cultureStats, militaryTotals, provinceStats, religionStats, stateStats } from '../model/derive'
 import { formatInt, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
+import { fullPath } from '../model/routing'
 import { list, patchProject, project, selection, tool } from '../model/store'
 import { AREA_KINDS, type AreaKind, type EntityKind, type Project } from '../model/types'
 import { mapView } from './mapRef'
@@ -93,7 +94,9 @@ function RouteList() {
   const columns: Column<Project['routes'][number]>[] = [
     { id: 'name', name: 'Name', value: r => r.name },
     { id: 'type', name: 'Typ', value: r => nameIn(p.catalog.routeTypes, r.type) },
-    { id: 'len', name: 'Länge km', numeric: true, value: r => Math.round(lineLengthM(r.geometry.coordinates, p.planetRadius) / 1000), render: r => formatInt(lineLengthM(r.geometry.coordinates, p.planetRadius) / 1000) },
+    // the whole way: a branch counts the shared stretch on its main route
+    { id: 'len', name: 'Länge km', numeric: true, value: r => Math.round(lineLengthM(fullPath(p.routes, r.id).path, p.planetRadius) / 1000), render: r => formatInt(lineLengthM(fullPath(p.routes, r.id).path, p.planetRadius) / 1000) },
+    { id: 'junction', name: 'Abzweig von', value: r => nameIn(p.routes, r.junctions?.start) },
   ]
   return (
     <>

@@ -7,9 +7,9 @@ import { cityMembership, cultureStats, provinceStats, religionStats, stateStats,
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
 import { notify, project, removeEntity, selectedEntity, selection, snapCities, tool, updateEntity } from '../model/store'
-import { cityAt } from '../model/routing'
+import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
-import type { AreaBase, City, Culture, Entity, EntityKind, Label, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
+import type { AreaBase, City, Culture, Entity, EntityKind, Label, LonLat, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
 import { platform } from '../platform'
 import { regimentTotal } from '../map/styles'
 import { mapView } from './mapRef'
@@ -352,16 +352,41 @@ function CityFields({ c }: { c: City }) {
   )
 }
 
+/** a route named as a link: a click selects it on the map */
+function RouteLink({ id }: { id: string }) {
+  const route = project.value.routes.find(r => r.id === id)
+  if (!route) return <>–</>
+  return (
+    <button
+      class="link"
+      onClick={() => {
+        selection.value = { kind: 'route', id }
+        mapView.current?.focus('route', id)
+      }}
+    >
+      {route.name || 'Route'}
+    </button>
+  )
+}
+
 function RouteFields({ r }: { r: Route }) {
   const p = project.value
   const up = useUpdate('route', r.id)
   const t = tool.value
   const coords = r.geometry.coordinates
-  const start = cityAt(p.cities, coords[0])
-  const end = cityAt(p.cities, coords[coords.length - 1])
+  const whole = fullPath(p.routes, r.id)
+  const start = cityAt(p.cities, whole.path[0] ?? coords[0])
+  const end = cityAt(p.cities, whole.path[whole.path.length - 1] ?? coords[coords.length - 1])
+  const km = (line: LonLat[]) => formatKm(lineLengthM(line, p.planetRadius))
+  const shared = whole.before.length > 0 || whole.after.length > 0
+  const branches = p.routes.filter(x => x.junctions?.start === r.id || x.junctions?.end === r.id)
   const sea = p.catalog.routeTypes.find(x => x.id === r.type)?.kind === 'sea'
   const px = () => mapView.current?.resolution() ?? 0.01
   const reshaping = t.id === 'reshape' && t.entityId === r.id
+  const release = (end: 'start' | 'end') => {
+    const junctions = { ...r.junctions, [end]: undefined }
+    up({ junctions: junctions.start || junctions.end ? junctions : undefined } as Partial<Route>)
+  }
   return (
     <>
       <Field label="Typ">
@@ -372,11 +397,88 @@ function RouteFields({ r }: { r: Route }) {
         <dd>{start?.name ?? '–'}</dd>
         <dt>Nach</dt>
         <dd>{end?.name ?? '–'}</dd>
-        <dt>Länge</dt>
-        <dd>{formatKm(lineLengthM(coords, p.planetRadius))}</dd>
+        <dt>{shared ? 'Gesamtstrecke' : 'Länge'}</dt>
+        <dd>
+          <strong>{km(whole.path.length ? whole.path : coords)}</strong>
+        </dd>
+        {shared && (
+          <>
+            {whole.before.length > 0 && (
+              <>
+                <dt>davor auf</dt>
+                <dd>
+                  {whole.via.before.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 && ' → '}
+                      <RouteLink id={id} />
+                    </span>
+                  ))}{' '}
+                  · {km([...whole.before, coords[0]])}
+                </dd>
+              </>
+            )}
+            <dt>eigener Teil</dt>
+            <dd>{km(coords)}</dd>
+            {whole.after.length > 0 && (
+              <>
+                <dt>danach auf</dt>
+                <dd>
+                  {whole.via.after.map((id, i) => (
+                    <span key={id}>
+                      {i > 0 && ' → '}
+                      <RouteLink id={id} />
+                    </span>
+                  ))}{' '}
+                  · {km([coords[coords.length - 1], ...whole.after])}
+                </dd>
+              </>
+            )}
+          </>
+        )}
         <dt>Stützpunkte</dt>
         <dd>{coords.length}</dd>
       </dl>
+      {(r.junctions?.start || r.junctions?.end || branches.length > 0) && (
+        <Section title="Anschlüsse">
+          <dl class="stats">
+            {r.junctions?.start && (
+              <>
+                <dt>Abzweig von</dt>
+                <dd>
+                  <RouteLink id={r.junctions.start} />{' '}
+                  <button class="small" title="Anschluss lösen (der Verlauf bleibt)" onClick={() => release('start')}>
+                    ✕
+                  </button>
+                </dd>
+              </>
+            )}
+            {r.junctions?.end && (
+              <>
+                <dt>Mündet in</dt>
+                <dd>
+                  <RouteLink id={r.junctions.end} />{' '}
+                  <button class="small" title="Anschluss lösen (der Verlauf bleibt)" onClick={() => release('end')}>
+                    ✕
+                  </button>
+                </dd>
+              </>
+            )}
+            {branches.length > 0 && (
+              <>
+                <dt>Abzweige</dt>
+                <dd>
+                  {branches.map((b, i) => (
+                    <span key={b.id}>
+                      {i > 0 && ', '}
+                      <RouteLink id={b.id} />
+                    </span>
+                  ))}
+                </dd>
+              </>
+            )}
+          </dl>
+        </Section>
+      )}
       <Section title="Verlauf">
         <div class="button-grid">
           <button class={reshaping ? 'active' : ''} onClick={() => (tool.value = reshaping ? { id: 'select' } : { id: 'reshape', entityId: r.id })} title="Einen Abschnitt neu zeichnen oder die Route verlängern">
@@ -391,9 +493,9 @@ function RouteFields({ r }: { r: Route }) {
             </button>
           )}
         </div>
-        <Check checked={snapCities.value} onChange={v => (snapCities.value = v)} label="An Städten einrasten" />
+        <Check checked={snapCities.value} onChange={v => (snapCities.value = v)} label="An Städten und Routen einrasten" />
         <p class="hint">
-          Punkte ziehen verschiebt sie, auf der Linie ziehen fügt einen ein, Alt+Klick löscht einen.
+          Punkte ziehen verschiebt sie, auf der Linie ziehen fügt einen ein, Alt+Klick löscht einen. Beginnt oder endet eine Route auf einer anderen, wird sie zum Abzweig bzw. mündet ein: der gemeinsame Teil bleibt in der anderen Route und zählt zur Gesamtstrecke.
           {coords.length > 150 && ' Freihand-Routen haben sehr viele Punkte: „Neu zeichnen“ formt einen Abschnitt um, „Vereinfachen“ dünnt sie aus.'}
           {sea && ' Seewege weichen beim Zeichnen dem Land aus.'}
         </p>

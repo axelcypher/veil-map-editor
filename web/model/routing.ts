@@ -372,3 +372,151 @@ export function avoidLand(line: LonLat[], land: AreaGeometry, cell: number): { l
   }
   return result
 }
+
+// ---------------------------------------------------------------------------------------------
+// branches and junctions: a route may start on another route (a branch) and end on one (it
+// joins). The shared stretch exists once, in the other route; the docking point is a vertex of it.
+
+export interface Junctions {
+  /** the route this one branches off at its first point */
+  start?: string
+  /** the route this one joins at its last point */
+  end?: string
+}
+
+export interface RouteLike {
+  id: string
+  geometry: { type: 'LineString'; coordinates: LonLat[] }
+  junctions?: Junctions
+}
+
+/** an end this close (degrees) to a route counts as on it after an exact snap (5 decimals) */
+const ON_LINE = 3e-5
+
+const atEnd = (line: LonLat[], hit: Hit) => (hit.index === 0 && hit.t < 1e-9) || (hit.index === line.length - 2 && hit.t > 1 - 1e-9)
+
+/** the point of `hit` as a vertex of the line: an existing one, or inserted */
+function withVertex(line: LonLat[], hit: Hit): { line: LonLat[]; index: number } {
+  if (same(hit.at, line[hit.index])) return { line, index: hit.index }
+  if (same(hit.at, line[hit.index + 1])) return { line, index: hit.index + 1 }
+  const out = [...line]
+  out.splice(hit.index + 1, 0, round(hit.at))
+  return { line: out, index: hit.index + 1 }
+}
+
+function setCoords<R extends RouteLike>(routes: R[], id: string, coordinates: LonLat[], patch: Partial<RouteLike> = {}): R[] {
+  return routes.map(r => (r.id === id ? { ...r, ...patch, geometry: { ...r.geometry, coordinates } } : r))
+}
+
+/**
+ * Docks the ends of route `id` onto the inside of other routes within `tolerance` degrees and
+ * records the junctions; an end on a city stays an ordinary connection. Returns all routes, the
+ * other routes with the docking vertex added where needed.
+ */
+export function dockEnds<R extends RouteLike>(routes: R[], id: string, cities: City[], tolerance: number): R[] {
+  let list = routes
+  const self = list.find(r => r.id === id)
+  if (!self || self.geometry.coordinates.length < 2) return list
+  const coords = [...self.geometry.coordinates]
+  const junctions: Junctions = {}
+  for (const end of ['start', 'end'] as const) {
+    const i = end === 'start' ? 0 : coords.length - 1
+    if (cityAt(cities, coords[i])) continue
+    let best: { route: R; hit: Hit } | null = null
+    for (const other of list) {
+      if (other.id === id || other.geometry.coordinates.length < 2) continue
+      const hit = nearestOnLine(other.geometry.coordinates, coords[i])
+      if (hit.dist <= tolerance && !atEnd(other.geometry.coordinates, hit) && (!best || hit.dist < best.hit.dist)) best = { route: other, hit }
+    }
+    if (!best) continue
+    const { line, index } = withVertex(best.route.geometry.coordinates, best.hit)
+    list = setCoords(list, best.route.id, line)
+    coords[i] = line[index]
+    junctions[end] = best.route.id
+  }
+  return setCoords(list, id, dedupe(coords), { junctions: junctions.start || junctions.end ? junctions : undefined })
+}
+
+/**
+ * After route `id` changed (`before`: its old points): the routes docked onto it follow it, and
+ * its own ends are docked again (or let go, when they were moved off the other route).
+ */
+export function settleJunctions<R extends RouteLike>(routes: R[], id: string, before: LonLat[] | null, cities: City[]): R[] {
+  let list = routes
+  for (const child of routes) {
+    for (const end of ['start', 'end'] as const) {
+      if (child.id === id || child.junctions?.[end] !== id) continue
+      const parent = list.find(r => r.id === id)!
+      const current = list.find(r => r.id === child.id)!
+      const coords = [...current.geometry.coordinates]
+      const i = end === 'start' ? 0 : coords.length - 1
+      let target: LonLat | null = null
+      // a dragged vertex: same count, same position in the line
+      if (before && before.length === parent.geometry.coordinates.length) {
+        const k = before.findIndex(q => same(q, coords[i]))
+        if (k >= 0) target = parent.geometry.coordinates[k]
+      }
+      // anything else: the nearest point of the new line
+      const hit = nearestOnLine(parent.geometry.coordinates, target ?? coords[i])
+      const { line, index } = withVertex(parent.geometry.coordinates, hit)
+      list = setCoords(list, id, line)
+      coords[i] = line[index]
+      list = setCoords(list, child.id, dedupe(coords))
+    }
+  }
+  return dockEnds(list, id, cities, ON_LINE)
+}
+
+/** after a route was deleted: nobody is docked onto it any more */
+export function dropJunctionsTo<R extends RouteLike>(routes: R[], id: string): R[] {
+  return routes.map(r => {
+    if (r.junctions?.start !== id && r.junctions?.end !== id) return r
+    const junctions = { start: r.junctions.start === id ? undefined : r.junctions.start, end: r.junctions.end === id ? undefined : r.junctions.end }
+    return { ...r, junctions: junctions.start || junctions.end ? junctions : undefined }
+  })
+}
+
+export interface FullPath {
+  /** the whole way: the shared stretch before, the route's own line, the shared stretch after */
+  path: LonLat[]
+  before: LonLat[]
+  own: LonLat[]
+  after: LonLat[]
+  /** the routes the shared stretches run on, in order */
+  via: { before: string[]; after: string[] }
+}
+
+/** the whole way of a route: from the start of the route it branches off to the end of the one it joins */
+export function fullPath<R extends RouteLike>(routes: R[], id: string): FullPath {
+  const byId = new Map(routes.map(r => [r.id, r]))
+  const self = byId.get(id)
+  const own = self?.geometry.coordinates ?? []
+  const viaBefore: string[] = []
+  const viaAfter: string[] = []
+  // up the branches: everything of the parent before the docking point, recursively
+  const prefix = (r: R, seen: Set<string>): LonLat[] => {
+    const parent = r.junctions?.start ? byId.get(r.junctions.start) : undefined
+    if (!parent || seen.has(parent.id)) return []
+    seen.add(parent.id)
+    const line = parent.geometry.coordinates
+    const k = line.findIndex(q => same(q, r.geometry.coordinates[0]))
+    if (k < 0) return []
+    viaBefore.unshift(parent.id)
+    return [...prefix(parent, seen), ...line.slice(0, k)]
+  }
+  // down the joins: everything of the joined route after the docking point, recursively
+  const suffix = (r: R, seen: Set<string>): LonLat[] => {
+    const next = r.junctions?.end ? byId.get(r.junctions.end) : undefined
+    if (!next || seen.has(next.id)) return []
+    seen.add(next.id)
+    const line = next.geometry.coordinates
+    const k = line.findIndex(q => same(q, r.geometry.coordinates[r.geometry.coordinates.length - 1]))
+    if (k < 0) return []
+    viaAfter.push(next.id)
+    return [...line.slice(k + 1), ...suffix(next, seen)]
+  }
+  if (!self) return { path: [], before: [], own: [], after: [], via: { before: [], after: [] } }
+  const before = prefix(self, new Set([id]))
+  const after = suffix(self, new Set([id]))
+  return { path: [...before, ...own, ...after], before, own, after, via: { before: viaBefore, after: viaAfter } }
+}

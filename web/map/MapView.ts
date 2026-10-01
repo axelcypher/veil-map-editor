@@ -528,11 +528,16 @@ export class MapView {
       this.map.addInteraction(interaction)
       if (interaction instanceof Draw) this.activeDraw = interaction
     }
-    // last, so it sees the pointer before the drawing or dragging does
-    const snapToCities = () => {
-      const snap = new Snap({ source: this.sources.city, edge: false, pixelTolerance: 12 })
-      snap.setActive(snapCities.peek())
-      add(snap)
+    // after the drawing or dragging, so they see the pointer first; the last one added has the
+    // last word, so a city wins over a route passing next to it
+    const snapForRoutes = (exclude?: string) => {
+      const routes = this.sources.route.getFeatures().filter(f => f.getId() !== exclude)
+      const onRoutes = new Snap({ features: new Collection(routes), pixelTolerance: 10 })
+      const onCities = new Snap({ source: this.sources.city, edge: false, pixelTolerance: 12 })
+      for (const snap of [onRoutes, onCities]) {
+        snap.setActive(snapCities.peek())
+        add(snap)
+      }
     }
     const target = this.map.getTargetElement()
     if (target) target.style.cursor = tool.id === 'select' ? '' : 'crosshair'
@@ -553,7 +558,7 @@ export class MapView {
         const modify = new Modify({ features: new Collection([feature]), deleteCondition })
         modify.on('modifyend', () => this.events.editGeometry(s.kind, s.id, fromOl(feature.getGeometry()!)))
         add(modify)
-        if (s.kind === 'route') snapToCities()
+        if (s.kind === 'route') snapForRoutes(s.id)
       }
     }
     if (tool.id === 'vertices' && s) {
@@ -573,7 +578,7 @@ export class MapView {
         this.events.create(tool, geometry, this.resolution())
       })
       add(draw)
-      if (tool.kind === 'route') snapToCities()
+      if (tool.kind === 'route') snapForRoutes()
     }
     if (tool.id === 'reshape') {
       const draw = new Draw({ type: 'LineString', source: this.measureSource, freehandCondition })
@@ -583,7 +588,7 @@ export class MapView {
         this.events.reshape(tool.entityId, this.smooth(coords, false), this.resolution())
       })
       add(draw)
-      snapToCities()
+      snapForRoutes(tool.entityId)
     }
     if (tool.id === 'area-new' || tool.id === 'area-add' || tool.id === 'area-subtract') {
       const draw = new Draw({ type: 'Polygon', source: this.measureSource, freehandCondition })
