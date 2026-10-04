@@ -43,16 +43,31 @@ Item names: letters, digits, `.`, `-`, `_`, at most 128 characters.
 Without `SYNC_SERVER_KEY` anybody who knows the address can open a space of their own; the limits
 above cap what that can cost.
 
-## Deploy (Komodo)
+## Deploy
 
-The image is built by `.github/workflows/build-sync-server.yml` as
-`ghcr.io/axelcypher/sync-server:sha-<commit>` and `:latest`. `deploy/compose.yaml` and
-`deploy/prod.env` follow the `gitops-homelab` layout: copy them to `apps/docker/sync-server/`,
-set `SYNC_HOST` (and optionally `SYNC_SERVER_KEY`), and point a Komodo stack at that
-folder. Traefik routes `SYNC_HOST` (TLS via the `dns-cloudflare` resolver) over the `proxy` network.
-In the resource-sync TOML (`komodo/apps/<name>.toml`) set `registry_provider="ghcr.io"` and
-`registry_account="axelcypher"`; without them the pull is denied on hosts whose own GHCR access
-is limited. The live stack is `veilmap-sync` on `veilmap.pendzialek.net`.
+Use the image from GitHub Container Registry (GHCR):
+`ghcr.io/axelcypher/sync-server:latest`, or pin a build with the `sha-<commit>` tag.
+Paths below are relative to `sync-server/`.
+
+1. Use `deploy/compose.yaml` and `deploy/prod.env` as templates for your deployment,
+   keeping both files together. Set `SYNC_IMAGE_VERSION` to the desired image tag,
+   `SYNC_HOST` to your public hostname, and optionally `SYNC_SERVER_KEY` to restrict
+   creation of new spaces. Supply `prod.env` as the Compose interpolation environment
+   as well as the service's environment file.
+2. Adapt the templates to your infrastructure. The supplied Compose file contains
+   Traefik-specific routing, TLS resolver settings and other deployment labels;
+   replace or remove these as appropriate for your reverse proxy. It also expects
+   an existing external network named `proxy`; create that network or adjust the
+   network configuration so your proxy can reach the service.
+3. Pull the image and start the service with Docker Compose. Keep the `sync_data`
+   volume mounted at `/data` for persistent storage. The template sets `SYNC_DATA`
+   to `/data` and `SYNC_PORT` to `8080`.
+4. Run behind any reverse proxy that terminates TLS with a valid certificate for
+   your public hostname and forwards requests to the service over HTTP on port
+   `8080`. The template publishes no host port; a proxy outside the container
+   network needs an appropriate port mapping, restricted to the proxy's access.
+   Check `/health` through the public HTTPS endpoint, then use that endpoint's
+   base URL in the app.
 
 ## Local
 
