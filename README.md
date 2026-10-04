@@ -59,6 +59,16 @@ Die Kacheln werden beim Speichern von PNG nach WebP umgerechnet (Qualität einst
 
 Beim Öffnen wird eine Datei am Inhalt erkannt (ZIP oder JSON). Ein Archiv wird in den App-Cache entpackt; ein eigener Import auf dem PC bleibt dabei unangetastet, ein Cache aus einem anderen Archiv wird am Stempel erkannt und ersetzt. „Speichern“ schreibt ein geöffnetes Archiv wieder als Archiv.
 
+## Sync-Server
+
+Die App synchronisiert Projekte über den Dienst **veilmap-sync**, dessen Implementierung unter [`sync-server/`](sync-server/) liegt. Unter „Datei → Synchronisierung …“ die **Server-Adresse** als Basis-URL ohne `/v1/items` eintragen; voreingestellt ist `https://veilmap.pendzialek.net`. Bei einem eigenen Server dessen erreichbare Adresse verwenden. Der Server lauscht intern per HTTP auf `0.0.0.0`, standardmäßig auf Port `8080` (Umgebungsvariable `SYNC_PORT`); für HTTPS wird ein vorgeschalteter Proxy benötigt. „Verbindung testen“ prüft zuerst `GET /health` und anschließend mit dem eingetragenen Code `GET /v1/items`.
+
+**Spaces (Workspaces/Bereiche):** Ein geheimer Code öffnet einen eigenen Bereich mit benannten Einträgen; die App speichert darin ein Projekt pro Eintrag. Auf allen Geräten dieselbe Server-Adresse und denselben Code verwenden, um dieselben Projekte zu erreichen. „Neu“ erzeugt einen zufälligen Code mit 32 Zeichen. Die App sendet ihn als `Authorization: Bearer <code>`; der Server akzeptiert 24–512 Bytes und leitet den Speicherordner aus einem Hash des Codes ab. Der Code ist der Zugangsschlüssel zum Space und muss geheim bleiben. Ein anderer Code öffnet einen anderen Bereich; der bisherige bleibt mit seinem bisherigen Code erreichbar.
+
+**Server-Key / Authentifizierung:** Ist serverseitig die Umgebungsvariable `SYNC_SERVER_KEY` nicht leer gesetzt, ihren Wert in der App als „Server-Schlüssel“ eintragen. Die App übermittelt ihn im Header `X-Server-Key`. Der Server verlangt ihn nur beim ersten Upload in einen neuen Space; fehlt er oder ist er falsch, antwortet er mit HTTP `403`. Bestehende Spaces benötigen nur ihren Code. Ohne gesetzten Server-Key können neue Spaces ohne diesen zusätzlichen Schlüssel entstehen. Ein erfolgreicher Verbindungstest allein bestätigt deshalb noch nicht, dass ein neuer Space angelegt werden darf.
+
+Nach „Übernehmen“ lädt „Mit dem Server verknüpfen“ das aktuelle Projekt hoch; auf anderen Geräten lässt es sich unter „Auf dem Server“ öffnen. Der Abgleich nutzt `GET` und `PUT` auf `/v1/items/{name}`. Schreibzugriffe nennen mit `If-Match` die zugrunde liegende Revision; bei einem veralteten Stand antwortet der Server mit HTTP `409`, damit die App den Konflikt behandeln kann. Synchronisiert werden die Projektdaten als JSON; Gelände und Bilder bleiben lokal auf jedem Gerät. Weitere Angaben zu Betrieb, Speichergrenzen und API stehen in der [Server-Dokumentation](sync-server/README.md).
+
 ## Globus
 
 Die 3D-Ansicht zeigt im Modus „Globus“ die Karte, das Satellitenbild oder das Relief auf der Kugel, mit Relief aus dem Höhenraster. Einstellbar sind Drehtempo und -richtung, Achsneigung, Sonne mit Tag-Nacht-Grenze, Atmosphäre, Wolken, Gradnetz und Hintergrund (transparent, Farbe, Sternenhimmel). Export: Standbild als PNG (mit Alphakanal), eine ganze Umdrehung als nahtlos loopendes GIF oder als WebM. Die Einstellungen stehen im Projekt.
