@@ -1,12 +1,17 @@
-// The timeline in the interface: the bar under the map that picks the year shown, the life and
-// history of the selected element, the chronicle of events, and the timeline settings.
+// The timeline in the interface: the bar under the map that picks strand and year, the life and
+// history of the selected element, the chronicle of events, and the settings of strands.
 import { signal } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
-import { KIND_NAMES, newEvent, newId, newTimeline } from '../model/project'
-import { commitSource, patchSource, project, selection, setYear, source, storedEntity, updateStored, year } from '../model/store'
-import { changeYears, editChange, entityYears, flattenAt, happeningsIn, moveChange, removeEventFromProject } from '../model/timeline'
-import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Project, type Timeline, type WorldEvent } from '../model/types'
+import { KIND_NAMES, newEvent, newId, newStrand, newTimeline } from '../model/project'
+import {
+  addStored, commitSource, editStrand, patchSource, project, reckoning, selection, setStrand, setYear, source, storedEntity, strand, updateEntity, updateStored, view, year,
+} from '../model/store'
+import {
+  baseStrand, chainOf, changesOf, changeToStrand, changeYears, copyElement, editChange, elementToStrand, entityYears, eventsIn, eventToStrand, flattenAt, happeningsIn,
+  lifeOf, moveChange, reckoningOf, removeEventFromProject, removeStrandFromProject, setVisibility, storedStrand, toBaseYear, toOwnYear, visibleIn, type Reckoning,
+} from '../model/timeline'
+import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Project, type Strand, type Timeline, type WorldEvent } from '../model/types'
 import { mapView } from './mapRef'
 import { NoteLink } from './NoteLink'
 import { Color, Field, Section, Select, Swatch, Text } from './components'
@@ -16,13 +21,30 @@ export const selectedEvent = signal<string | null>(null)
 /** asks the app to show the chronicle (a click on an event in the bar) */
 export const chronicleRequest = signal(0)
 
-export const formatYear = (y: number, t: Timeline | null = source.value.timeline) => `${y}${t?.unit ? ` ${t.unit}` : ''}`
+/** a year (base years) as the strand shown counts it, with its unit */
+export const formatYear = (baseYear: number, r: Reckoning | null = reckoning.value) => (r ? `${toOwnYear(r, baseYear)}${r.unit ? ` ${r.unit}` : ''}` : String(baseYear))
 
-/** the era a year falls in */
-export function eraAt(t: Timeline, y: number): Era | null {
+const strandOf = (t: Timeline, id: string | undefined) => t.strands.find(s => s.id === (id ?? baseStrand(t).id))
+export const strandName = (t: Timeline, id: string | undefined) => strandOf(t, id)?.name ?? '?'
+
+/** the era a year (own years) falls in */
+export function eraAt(r: Reckoning, ownYear: number): Era | null {
   let found: Era | null = null
-  for (const era of [...t.eras].sort((a, b) => a.start - b.start)) if (era.start <= y) found = era
+  for (const era of r.eras) if (era.start <= ownYear) found = era
   return found
+}
+
+/** the strands as a tree: each with its depth, parents before their children */
+export function strandTree(t: Timeline): { strand: Strand; depth: number }[] {
+  const out: { strand: Strand; depth: number }[] = []
+  const walk = (parent: string | null, depth: number) => {
+    for (const s of t.strands.filter(x => x.parent === parent)) {
+      out.push({ strand: s, depth })
+      walk(s.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
 }
 
 /** a year field that only takes the value when typing is done (Enter or leaving the field) */
@@ -54,10 +76,33 @@ function YearInput({ value, onChange, placeholder, title }: { value: number | nu
   )
 }
 
+/** the same, in the own years of a reckoning while the value is in base years */
+function OwnYearInput({ value, onChange, r, placeholder, title }: { value: number | null | undefined; onChange: (base: number | null) => void; r: Reckoning; placeholder?: string; title?: string }) {
+  return <YearInput value={value == null ? value : toOwnYear(r, value)} onChange={v => onChange(v == null ? null : toBaseYear(r, v))} placeholder={placeholder} title={title} />
+}
+
+/** the strands to choose from, indented as a tree */
+function StrandSelect({ value, onChange, exclude, label }: { value: string; onChange: (id: string) => void; exclude?: string[]; label?: string }) {
+  const t = source.value.timeline
+  if (!t) return null
+  return (
+    <select value={value} onChange={e => onChange((e.target as HTMLSelectElement).value)} aria-label={label ?? 'Strang'}>
+      {strandTree(t)
+        .filter(x => !exclude?.includes(x.strand.id))
+        .map(({ strand: s, depth }) => (
+          <option key={s.id} value={s.id}>
+            {' '.repeat(depth)}
+            {s.name}
+          </option>
+        ))}
+    </select>
+  )
+}
+
 // ---------------------------------------------------------------------------------------------
 // the bar
 
-const percent = (t: Timeline, y: number) => `${((Math.min(t.end, Math.max(t.start, y)) - t.start) / Math.max(1, t.end - t.start)) * 100}%`
+const percent = (r: Reckoning, y: number) => `${((Math.min(r.end, Math.max(r.start, y)) - r.start) / Math.max(1, r.end - r.start)) * 100}%`
 
 /** the next year (after or before the one shown) in which something changes */
 function neighbour(years: number[], from: number, direction: 1 | -1) {
@@ -68,37 +113,46 @@ export function TimelineBar() {
   const raw = source.value
   const t = raw.timeline
   const y = year.value
+  const r = reckoning.value
+  const v = view.value
   const [playing, setPlaying] = useState(false)
-  const years = changeYears(raw)
+  const years = t ? changeYears(raw, v) : []
   const s = selection.value
   const stored = s ? storedEntity(s.kind, s.id) : undefined
-  const own = stored ? entityYears(stored) : []
+  const own = stored ? entityYears(stored, raw, v) : []
   // playing walks through the years in which something changes
   useEffect(() => {
     if (!playing) return
     const timer = window.setInterval(() => {
       const p = source.peek()
-      const next = neighbour(changeYears(p), year.peek() ?? 0, 1)
-      if (next == null || !p.timeline || next > p.timeline.end) setPlaying(false)
+      const end = reckoning.peek()?.end ?? 0
+      const next = neighbour(changeYears(p, view.peek()), year.peek() ?? 0, 1)
+      if (next == null || next > end) setPlaying(false)
       else setYear(next)
     }, 1200)
     return () => clearInterval(timer)
   }, [playing])
-  if (!t || y == null) return null
-  const era = eraAt(t, y)
-  const eras = [...t.eras].sort((a, b) => a.start - b.start)
+  if (!t || y == null || !r) return null
+  const current = strandOf(t, strand.value)
+  const era = eraAt(r, toOwnYear(r, y))
   const step = (direction: 1 | -1) => {
     const next = neighbour(years, y, direction)
     if (next != null) setYear(next)
   }
   const addEvent = () => {
-    const event = newEvent(raw, y)
+    const event = newEvent(raw, y, editStrand())
     patchSource({ events: [...raw.events, event] })
     selectedEvent.value = event.id
     chronicleRequest.value++
   }
+  const eraBase = (e: Era) => toBaseYear(r, e.start)
   return (
     <div class="timeline-bar" aria-label="Zeitleiste">
+      {t.strands.length > 1 && (
+        <span class="tl-strand" style={{ borderColor: current?.color }} title="Gezeigter Strang">
+          <StrandSelect value={strand.value} onChange={setStrand} />
+        </span>
+      )}
       <div class="tl-controls">
         <button class="icon" title="Voriges Jahr mit Änderungen (Alt+←)" disabled={neighbour(years, y, -1) == null} onClick={() => step(-1)}>
           ⏮
@@ -111,8 +165,8 @@ export function TimelineBar() {
         </button>
       </div>
       <div class="tl-year">
-        <YearInput value={y} onChange={v => v != null && setYear(v)} title="Jahr eingeben" />
-        {t.unit && <span class="tl-unit">{t.unit}</span>}
+        <OwnYearInput value={y} onChange={x => x != null && setYear(x)} r={r} title="Jahr eingeben" />
+        {r.unit && <span class="tl-unit">{r.unit}</span>}
         {era && (
           <span class="tl-era" style={{ borderColor: era.color }}>
             {era.name}
@@ -122,42 +176,46 @@ export function TimelineBar() {
       <div class="tl-track">
         <div class="tl-marks">
           <span class="tl-line" />
-          <span class="tl-progress" style={{ width: percent(t, y) }} />
-          {eras.map((e, i) => (
+          <span class="tl-progress" style={{ width: percent(r, y) }} />
+          {r.eras.map((e, i) => (
             <span
               key={e.id}
               class="tl-era-band"
               title={e.name}
-              style={{ left: percent(t, e.start), width: `calc(${percent(t, eras[i + 1]?.start ?? t.end)} - ${percent(t, e.start)})`, background: e.color }}
+              style={{ left: percent(r, eraBase(e)), width: `calc(${percent(r, r.eras[i + 1] ? eraBase(r.eras[i + 1]) : r.end)} - ${percent(r, eraBase(e))})`, background: e.color }}
             />
           ))}
-          {years.map(x => (
-            <span key={x} class={`tl-tick${own.includes(x) ? ' own' : ''}`} style={{ left: percent(t, x) }} />
-          ))}
-          {raw.events.map(e => {
-            const color = raw.catalog.eventTypes.find(k => k.id === e.type)?.color ?? '#9e9e9e'
-            return (
-              <button
-                key={e.id}
-                class={`tl-event${selectedEvent.value === e.id ? ' on' : ''}`}
-                title={`${formatYear(e.year, t)}${e.until != null ? `–${e.until}` : ''}: ${e.name}`}
-                style={{ left: percent(t, e.year), width: e.until != null ? `calc(${percent(t, e.until)} - ${percent(t, e.year)} + 9px)` : undefined, background: color }}
-                onClick={() => {
-                  setYear(e.year)
-                  selectedEvent.value = e.id
-                  chronicleRequest.value++
-                }}
-              />
-            )
-          })}
+          {years
+            .filter(x => x >= r.start && x <= r.end)
+            .map(x => (
+              <span key={x} class={`tl-tick${own.includes(x) ? ' own' : ''}`} style={{ left: percent(r, x) }} />
+            ))}
+          {eventsIn(raw, v)
+            .filter(e => (e.until ?? e.year) >= r.start && e.year <= r.end)
+            .map(e => {
+              const color = raw.catalog.eventTypes.find(k => k.id === e.type)?.color ?? '#9e9e9e'
+              return (
+                <button
+                  key={e.id}
+                  class={`tl-event${selectedEvent.value === e.id ? ' on' : ''}`}
+                  title={`${formatYear(e.year, r)}${e.until != null ? `–${toOwnYear(r, e.until)}` : ''}: ${e.name}`}
+                  style={{ left: percent(r, e.year), width: e.until != null ? `calc(${percent(r, e.until)} - ${percent(r, e.year)} + 9px)` : undefined, background: color }}
+                  onClick={() => {
+                    setYear(e.year)
+                    selectedEvent.value = e.id
+                    chronicleRequest.value++
+                  }}
+                />
+              )
+            })}
         </div>
-        <input type="range" min={t.start} max={t.end} step={1} value={y} onInput={e => setYear(Number((e.target as HTMLInputElement).value))} aria-label="Jahr" />
+        <input type="range" min={r.start} max={r.end} step={1} value={y} onInput={e => setYear(Number((e.target as HTMLInputElement).value))} aria-label="Jahr" />
         <div class="tl-ends">
-          <span>{t.start}</span>
-          <span>{t.end}</span>
+          <span>{toOwnYear(r, r.start)}</span>
+          <span>{toOwnYear(r, r.end)}</span>
         </div>
       </div>
-      <button class="small" onClick={addEvent} title="Neues Ereignis in diesem Jahr, in der Chronik bearbeiten">
+      <button class="small" onClick={addEvent} title="Neues Ereignis in diesem Jahr und Strang, in der Chronik bearbeiten">
         ＋ Ereignis
       </button>
     </div>
@@ -165,7 +223,7 @@ export function TimelineBar() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// the selected element: its life span and its changes
+// the selected element: where it comes from, its life span and its changes
 
 const FIELD_NAMES: Record<string, string> = {
   name: 'Name',
@@ -227,89 +285,177 @@ export function describeChange(set: Record<string, unknown>, p: Project = source
 }
 
 function EventSelect({ value, onChange }: { value: string | undefined; onChange: (id: string) => void }) {
-  const events = [...source.value.events].sort((a, b) => a.year - b.year)
+  const r = reckoning.value
+  const events = [...eventsIn(source.value, view.value)].sort((a, b) => a.year - b.year)
   if (!events.length) return null
-  return <Select value={value ?? ''} onChange={onChange} options={events.map(e => ({ id: e.id, name: `${e.year} · ${e.name}` }))} empty="kein Ereignis" />
+  return <Select value={value ?? ''} onChange={onChange} options={events.map(e => ({ id: e.id, name: `${r ? toOwnYear(r, e.year) : e.year} · ${e.name}` }))} empty="kein Ereignis" />
 }
 
-/** in the inspector's head: from which year an edit holds, when that is not the element's first */
+/** a short choice "move to …" / "copy to …" over the other strands */
+function StrandAction({ current, onMove, onCopy, title }: { current: string; onMove: (target: string) => void; onCopy: (target: string) => void; title: string }) {
+  const t = source.value.timeline
+  if (!t || t.strands.length < 2) return null
+  const others = strandTree(t).filter(x => x.strand.id !== current)
+  return (
+    <select
+      class="strand-action"
+      value=""
+      title={title}
+      onChange={e => {
+        const [action, target] = (e.target as HTMLSelectElement).value.split(':')
+        if (action === 'move') onMove(target)
+        if (action === 'copy') onCopy(target)
+      }}
+    >
+      <option value="">⇄</option>
+      <optgroup label="Verschieben nach">
+        {others.map(({ strand: s }) => (
+          <option key={`m${s.id}`} value={`move:${s.id}`}>
+            {s.name}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Kopieren nach">
+        {others.map(({ strand: s }) => (
+          <option key={`c${s.id}`} value={`copy:${s.id}`}>
+            {s.name}
+          </option>
+        ))}
+      </optgroup>
+    </select>
+  )
+}
+
+/** in the inspector's head: where an element comes from, and from which year an edit holds */
 export function EditYear({ kind, id }: { kind: EntityKind; id: string }) {
   const t = source.value.timeline
   const y = year.value
+  const r = reckoning.value
   const stored = storedEntity(kind, id)
-  if (!t || y == null || !stored || y <= (stored.begin ?? t.start)) return null
+  if (!t || y == null || !r || !stored) return null
+  const own = stored.strand === editStrand()
+  const since = stored.begin ?? r.start
+  if (own) {
+    if (y <= since) return null
+    return (
+      <span class="edit-year" title="Was du hier änderst, gilt ab diesem Jahr; frühere Jahre bleiben, wie sie waren">
+        Änderung ab {formatYear(y, r)}
+      </span>
+    )
+  }
   return (
-    <span class="edit-year" title="Was du hier änderst, gilt ab diesem Jahr; frühere Jahre bleiben, wie sie waren">
-      Änderung ab {formatYear(y, t)}
+    <span class="edit-year deviation" title={`Das Element gehört zu „${strandName(t, stored.strand)}“. Was du hier änderst, ist eine Abweichung in „${strandName(t, strand.value)}“ ab diesem Jahr; das Original bleibt.`}>
+      Abweichung ab {formatYear(y, r)}
     </span>
   )
 }
 
-/** life span and dated changes of the selected element; only with a timeline */
+/** life span, origin and dated changes of the selected element; only with a timeline */
 export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
-  const t = source.value.timeline
+  const raw = source.value
+  const t = raw.timeline
   const y = year.value
+  const r = reckoning.value
+  const v = view.value
   const stored = storedEntity(kind, id)
-  if (!t || y == null || !stored) return null
-  const since = stored.begin ?? t.start
-  const edit = (change: (e: Base) => Base, merge?: string) => updateStored(kind, id, e => change(e) as typeof e, merge)
-  const setLife = (key: 'begin' | 'end', value: number | null) =>
-    edit(e => {
-      const out = { ...e }
-      if (value == null) delete out[key]
-      else out[key] = value
-      return out
-    })
-  const history = stored.history ?? []
+  if (!t || y == null || !r || !stored) return null
+  const me = editStrand()
+  const own = stored.strand === me
+  const life = lifeOf(raw, v, stored)
+  const since = own ? (stored.begin ?? r.start) : -Infinity
+  const editStored = (change: (e: Base) => Base, merge?: string) => updateStored(kind, id, e => change(e) as typeof e, merge)
+  // begin and end go through the world: on an own element they are its own, on another one a deviation
+  const setLife = (key: 'begin' | 'end', value: number | null) => updateEntity(kind, id, { [key]: value ?? undefined } as never)
+  const changes = changesOf(raw, v, stored)
+  const many = t.strands.length > 1
   return (
     <Section title="Zeit" open>
+      {many && (
+        <p class="hint origin">
+          <Swatch color={strandOf(t, stored.strand)?.color ?? '#999'} /> gehört zu <strong>{strandName(t, stored.strand)}</strong>
+          {!own && <> · hier gezeigt in „{strandName(t, strand.value)}“</>}
+          <StrandAction
+            current={stored.strand ?? baseStrand(t).id}
+            title="Element in einen anderen Strang verschieben oder dorthin kopieren"
+            onMove={target => editStored(e => elementToStrand(t, e, target))}
+            onCopy={target => {
+              addStored(kind, copyElement(t, stored, target, newId(kind)) as never)
+              // the copy replaces the original where it lives: hidden there
+              if (target === strand.value) editStored(e => setVisibility(e, target, { show: false }))
+            }}
+          />
+        </p>
+      )}
       <p class={`hint time-mode${y > since ? ' dated' : ''}`}>
-        {y > since ? (
+        {!own ? (
           <>
-            Änderungen gelten <strong>ab {formatYear(y, t)}</strong> und werden als Stand dieses Jahres gespeichert.
+            Änderungen sind eine <strong>Abweichung</strong> in „{strandName(t, strand.value)}“ ab {formatYear(y, r)}; das Original in „{strandName(t, stored.strand)}“ bleibt.
+          </>
+        ) : y > since ? (
+          <>
+            Änderungen gelten <strong>ab {formatYear(y, r)}</strong> und werden als Stand dieses Jahres gespeichert.
           </>
         ) : (
-          <>Änderungen gelten von Anfang an ({formatYear(since, t)}) – der erste Stand.</>
+          <>Änderungen gelten von Anfang an ({formatYear(since, r)}) – der erste Stand.</>
         )}
       </p>
-      <Field label="Besteht seit" hint="leer = von Beginn der Zeitleiste an">
+      <Field label="Besteht seit" hint={own ? 'leer = von Beginn des Ausschnitts an' : 'abweichend von der Herkunft möglich'}>
         <span class="inline">
-          <YearInput value={stored.begin} onChange={v => setLife('begin', v)} placeholder={String(t.start)} />
-          {stored.begin !== y && (
+          <OwnYearInput value={life.begin} onChange={x => setLife('begin', x)} r={r} placeholder={String(toOwnYear(r, r.start))} />
+          {life.begin !== y && (
             <button class="small" onClick={() => setLife('begin', y)} title="Entsteht im gezeigten Jahr">
-              ab {y}
+              ab {toOwnYear(r, y)}
             </button>
           )}
         </span>
       </Field>
       <Field label="Endet" hint="ab diesem Jahr nicht mehr da; leer = besteht fort">
         <span class="inline">
-          <YearInput value={stored.end} onChange={v => setLife('end', v)} placeholder="—" />
+          <OwnYearInput value={life.end} onChange={x => setLife('end', x)} r={r} placeholder="—" />
           <button class="small" onClick={() => setLife('end', y)} title="Verschwindet ab dem gezeigten Jahr von der Karte (Rückgängig holt es zurück)">
-            endet {y}
+            endet {toOwnYear(r, y)}
           </button>
         </span>
       </Field>
-      {history.length > 0 ? (
+      {changes.length > 0 ? (
         <ol class="change-list">
-          {history.map((c: Change) => (
-            <li key={c.year} class={c.year === y ? 'current' : c.year < y ? 'past' : 'future'}>
-              <div class="change-head">
-                <button class="link change-year" title="Dieses Jahr zeigen" onClick={() => setYear(c.year)}>
-                  {formatYear(c.year, t)}
-                </button>
-                <span class="change-fields">{describeChange(c.set, project.value) || 'nur Anmerkung'}</span>
-                <span class="change-actions">
-                  <YearInput value={c.year} onChange={to => to != null && edit(e => moveChange(e, c.year, to))} title="In ein anderes Jahr verschieben" />
-                  <button class="icon danger" title="Diese Änderung löschen" onClick={() => edit(e => editChange(e, c.year, () => null))}>
-                    🗑
+          {changes.map((c: Change) => {
+            const ref = { year: c.year, strand: c.strand }
+            const mine = c.strand === me
+            return (
+              <li key={`${c.year}|${c.strand ?? ''}`} class={`${c.year === y ? 'current' : c.year < y ? 'past' : 'future'}${mine ? '' : ' inherited'}`}>
+                <div class="change-head">
+                  <button class="link change-year" title="Dieses Jahr zeigen" onClick={() => setYear(c.year)}>
+                    {formatYear(c.year, r)}
                   </button>
-                </span>
-              </div>
-              <input type="text" placeholder="Anlass, Grund …" value={c.note ?? ''} onInput={e => edit(x => editChange(x, c.year, ch => ({ ...ch, note: (e.target as HTMLInputElement).value || undefined })), `note-${c.year}`)} />
-              <EventSelect value={c.event} onChange={v => edit(x => editChange(x, c.year, ch => ({ ...ch, event: v || undefined })))} />
-            </li>
-          ))}
+                  <span class="change-fields">{describeChange(c.set, project.value) || 'nur Anmerkung'}</span>
+                  {mine && (
+                    <span class="change-actions">
+                      <OwnYearInput value={c.year} onChange={to => to != null && editStored(e => moveChange(e, ref, to))} r={r} title="In ein anderes Jahr verschieben" />
+                      <StrandAction
+                        current={c.strand ?? baseStrand(t).id}
+                        title="Änderung in einen anderen Strang verschieben oder dorthin kopieren"
+                        onMove={target => editStored(e => changeToStrand(t, e, ref, target, false))}
+                        onCopy={target => editStored(e => changeToStrand(t, e, ref, target, true))}
+                      />
+                      <button class="icon danger" title="Diese Änderung löschen" onClick={() => editStored(e => editChange(e, ref, () => null))}>
+                        🗑
+                      </button>
+                    </span>
+                  )}
+                </div>
+                {many && c.strand !== stored.strand && <span class="change-strand">{mine ? 'Abweichung' : 'aus'} „{strandName(t, c.strand)}“</span>}
+                {mine ? (
+                  <>
+                    <input type="text" placeholder="Anlass, Grund …" value={c.note ?? ''} onInput={e => editStored(x => editChange(x, ref, ch => ({ ...ch, note: (e.target as HTMLInputElement).value || undefined })), `note-${c.year}`)} />
+                    <EventSelect value={c.event} onChange={id => editStored(x => editChange(x, ref, ch => ({ ...ch, event: id || undefined })))} />
+                  </>
+                ) : (
+                  c.note && <span class="muted">{c.note}</span>
+                )}
+              </li>
+            )
+          })}
         </ol>
       ) : (
         <p class="hint">Noch keine Änderungen. Zum gewünschten Jahr springen und das Element dort bearbeiten.</p>
@@ -328,40 +474,43 @@ const pick = (kind: EntityKind, id: string) => {
 
 function YearReport({ y }: { y: number }) {
   const raw = source.value
-  const entries = happeningsIn(raw, y)
-  const relations = raw.diplomacyHistory.find(c => c.year === y)
-  const events = raw.events.filter(e => e.year === y || (e.until != null && e.year < y && y <= e.until))
+  const v = view.value
+  const entries = happeningsIn(raw, y, v)
+  const relations = raw.diplomacyHistory.filter(c => c.year === y && visibleIn(raw, v, c))
+  const events = eventsIn(raw, v).filter(e => e.year === y || (e.until != null && e.year < y && y <= e.until))
+  const r = reckoning.value
   // names as they are in the year shown (an element that ends here: as it was before)
   const world = project.value
   const name = (kind: EntityKind, id: string) => `${(world[COLLECTION[kind]] as unknown as Base[]).some(e => e.id === id) ? nameOfId(world, id) : nameOfId(raw, id)} (${KIND_NAMES[kind][0]})`
-  const relationName = (id: string) => raw.catalog.relations.find(r => r.id === id)?.name ?? 'keine'
-  if (!entries.length && !relations && !events.length) return <p class="empty">In diesem Jahr ändert sich nichts.</p>
+  const relationName = (id: string) => raw.catalog.relations.find(rel => rel.id === id)?.name ?? 'keine'
+  if (!entries.length && !relations.length && !events.length) return <p class="empty">In diesem Jahr ändert sich nichts.</p>
   return (
     <ul class="year-report">
       {events.map(e => (
         <li key={e.id} class="event" onClick={() => (selectedEvent.value = e.id)}>
           <Swatch color={raw.catalog.eventTypes.find(k => k.id === e.type)?.color ?? '#9e9e9e'} /> {e.name}
-          {e.year !== y && <span class="muted"> · seit {e.year}</span>}
+          {e.year !== y && <span class="muted"> · seit {r ? toOwnYear(r, e.year) : e.year}</span>}
         </li>
       ))}
       {entries.map(entry => (
-        <li key={`${entry.kind}:${entry.id}:${entry.what}`} onClick={() => entry.what !== 'end' && pick(entry.kind, entry.id)} class={entry.what}>
+        <li key={`${entry.kind}:${entry.id}:${entry.what}:${entry.change?.strand ?? ''}`} onClick={() => entry.what !== 'end' && pick(entry.kind, entry.id)} class={entry.what}>
           <span class="what">{entry.what === 'begin' ? 'entsteht' : entry.what === 'end' ? 'endet' : 'ändert sich'}</span> {name(entry.kind, entry.id)}
           {entry.change && Object.keys(entry.change.set).length > 0 && <span class="muted"> · {describeChange(entry.change.set, world)}</span>}
           {entry.change?.note && <span class="muted"> · {entry.change.note}</span>}
         </li>
       ))}
-      {relations &&
-        Object.entries(relations.set)
+      {relations.flatMap(change =>
+        Object.entries(change.set)
           .filter(([key]) => key.split('>')[0] < key.split('>')[1])
           .map(([key, value]) => {
             const [a, b] = key.split('>')
             return (
-              <li key={key} class="change">
+              <li key={`${key}|${change.strand ?? ''}`} class="change">
                 <span class="what">Beziehung</span> {nameOfId(world, a)} ↔ {nameOfId(world, b)}: {relationName(String(value))}
               </li>
             )
-          })}
+          }),
+      )}
     </ul>
   )
 }
@@ -398,14 +547,48 @@ function RefPicker({ onAdd }: { onAdd: (ref: EntityRef) => void }) {
   )
 }
 
+const setEvents = (events: WorldEvent[], merge?: string) => patchSource({ events }, merge)
+
 function EventEditor({ event }: { event: WorldEvent }) {
   const raw = source.value
-  const set = (patch: Partial<WorldEvent>, merge?: string) =>
-    patchSource({ events: source.peek().events.map(e => (e.id === event.id ? { ...e, ...patch } : e)) }, merge ? `event:${event.id}:${merge}` : undefined)
+  const t = raw.timeline
+  const r = reckoning.value
+  const own = event.strand === editStrand()
+  const set = (patch: Partial<WorldEvent>, merge?: string) => setEvents(source.peek().events.map(e => (e.id === event.id ? { ...e, ...patch } : e)), merge ? `event:${event.id}:${merge}` : undefined)
   const remove = async () => {
     if (!(await confirmDialog(`Ereignis „${event.name}“ löschen? Änderungen, die darauf verweisen, bleiben, verlieren aber den Verweis.`, { yes: 'Löschen' }))) return
     commitSource(removeEventFromProject(source.peek(), event.id))
     selectedEvent.value = null
+  }
+  /** an own version of an inherited event: a copy in the strand shown, the original hidden there */
+  const deviate = () => {
+    if (!t) return
+    const copy = { ...eventToStrand(t, event, strand.value), id: newId('event'), visibility: undefined }
+    setEvents([...source.peek().events.map(e => (e.id === event.id ? setVisibility(e, strand.value, { show: false }) : e)), copy])
+    selectedEvent.value = copy.id
+  }
+  if (!own && t) {
+    return (
+      <div class="event-editor">
+        <p class="hint">
+          Aus „{strandName(t, event.strand)}“. {event.description || 'Keine Beschreibung.'}
+        </p>
+        {event.refs.length > 0 && (
+          <div class="chips">
+            {event.refs.map(ref => (
+              <button key={`${ref.kind}:${ref.id}`} class="chip link" onClick={() => pick(ref.kind, ref.id)}>
+                {nameOfId(raw, ref.id)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div class="button-row">
+          <button onClick={deviate} title="Eine eigene Fassung in diesem Strang anlegen; das Original wird hier ausgeblendet">
+            Abweichende Fassung in „{strandName(t, strand.value)}“
+          </button>
+        </div>
+      </div>
+    )
   }
   return (
     <div class="event-editor">
@@ -414,9 +597,9 @@ function EventEditor({ event }: { event: WorldEvent }) {
       </Field>
       <Field label="Jahr">
         <span class="inline">
-          <YearInput value={event.year} onChange={v => v != null && set({ year: v })} />
+          {r && <OwnYearInput value={event.year} onChange={v => v != null && set({ year: v })} r={r} />}
           <span class="muted">bis</span>
-          <YearInput value={event.until} onChange={v => set({ until: v != null && v > event.year ? v : null })} placeholder="—" title="Letztes Jahr eines länger dauernden Ereignisses" />
+          {r && <OwnYearInput value={event.until} onChange={v => set({ until: v != null && v > event.year ? v : null })} r={r} placeholder="—" title="Letztes Jahr eines länger dauernden Ereignisses" />}
         </span>
       </Field>
       <Field label="Art">
@@ -424,22 +607,30 @@ function EventEditor({ event }: { event: WorldEvent }) {
       </Field>
       <Field label="Betrifft" wide>
         <div class="chips">
-          {event.refs.map(r => (
-            <span key={`${r.kind}:${r.id}`} class="chip on">
-              <button class="link" onClick={() => pick(r.kind, r.id)}>
-                {nameOfId(raw, r.id)}
+          {event.refs.map(ref => (
+            <span key={`${ref.kind}:${ref.id}`} class="chip on">
+              <button class="link" onClick={() => pick(ref.kind, ref.id)}>
+                {nameOfId(raw, ref.id)}
               </button>
-              <button class="link" title="Entfernen" onClick={() => set({ refs: event.refs.filter(x => !(x.kind === r.kind && x.id === r.id)) })}>
+              <button class="link" title="Entfernen" onClick={() => set({ refs: event.refs.filter(x => !(x.kind === ref.kind && x.id === ref.id)) })}>
                 ✕
               </button>
             </span>
           ))}
         </div>
-        <RefPicker onAdd={ref => !event.refs.some(r => r.kind === ref.kind && r.id === ref.id) && set({ refs: [...event.refs, ref] })} />
+        <RefPicker onAdd={ref => !event.refs.some(x => x.kind === ref.kind && x.id === ref.id) && set({ refs: [...event.refs, ref] })} />
       </Field>
       <Text multiline value={event.description} onInput={v => set({ description: v }, 'description')} placeholder="Was geschah, wer war beteiligt, was folgte …" />
       <NoteLink note={event.note} name={event.name} onChange={note => set({ note })} />
       <div class="button-row">
+        {t && t.strands.length > 1 && (
+          <StrandAction
+            current={event.strand ?? baseStrand(t).id}
+            title="Ereignis in einen anderen Strang verschieben oder dorthin kopieren"
+            onMove={target => set({ ...eventToStrand(t, event, target), strand: storedStrand(t, target) })}
+            onCopy={target => setEvents([...source.peek().events, { ...eventToStrand(t, event, target), id: newId('event'), visibility: undefined }])}
+          />
+        )}
         <button class="danger" onClick={remove}>
           Ereignis löschen
         </button>
@@ -452,11 +643,12 @@ export function Chronicle() {
   const raw = source.value
   const t = raw.timeline
   const y = year.value
+  const r = reckoning.value
   const list = useRef<HTMLOListElement>(null)
   useEffect(() => {
     list.current?.querySelector('.on')?.scrollIntoView({ block: 'nearest' })
   }, [selectedEvent.value])
-  if (!t || y == null) {
+  if (!t || y == null || !r) {
     return (
       <>
         <p class="hint">
@@ -466,9 +658,9 @@ export function Chronicle() {
       </>
     )
   }
-  const events = [...raw.events].sort((a, b) => a.year - b.year || a.name.localeCompare(b.name, 'de'))
+  const events = [...eventsIn(raw, view.value)].sort((a, b) => a.year - b.year || a.name.localeCompare(b.name, 'de'))
   const addEvent = () => {
-    const event = newEvent(raw, y)
+    const event = newEvent(raw, y, editStrand())
     patchSource({ events: [...raw.events, event] })
     selectedEvent.value = event.id
   }
@@ -476,10 +668,11 @@ export function Chronicle() {
     <>
       <div class="list-actions">
         <button class="primary" onClick={addEvent}>
-          ＋ Ereignis im Jahr {y}
+          ＋ Ereignis im Jahr {toOwnYear(r, y)}
         </button>
+        {t.strands.length > 1 && <span class="muted">in „{strandName(t, strand.value)}“</span>}
       </div>
-      <Section title={`Im Jahr ${formatYear(y, t)}`}>
+      <Section title={`Im Jahr ${formatYear(y, r)}`}>
         <YearReport y={y} />
       </Section>
       <Section title="Ereignisse">
@@ -500,11 +693,12 @@ export function Chronicle() {
                     }}
                   >
                     <span class="event-year">
-                      {e.year}
-                      {e.until != null ? `–${e.until}` : ''}
+                      {toOwnYear(r, e.year)}
+                      {e.until != null ? `–${toOwnYear(r, e.until)}` : ''}
                     </span>
                     <Swatch color={type?.color ?? '#9e9e9e'} />
                     <span class="event-name">{e.name}</span>
+                    {t.strands.length > 1 && e.strand !== editStrand() && <span class="strand-tag">{strandName(t, e.strand)}</span>}
                     <span class="muted">{type?.name}</span>
                   </button>
                   {open && <EventEditor event={e} />}
@@ -519,14 +713,16 @@ export function Chronicle() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// settings
+// settings: strands and their reckoning
 
 function TimelineSetup() {
   const [start, setStart] = useState(0)
   const [end, setEnd] = useState(1000)
   const [unit, setUnit] = useState('')
   const create = () => {
-    patchSource({ timeline: newTimeline(start, end, unit.trim()) })
+    const timeline = newTimeline(start, end, unit.trim())
+    patchSource({ timeline })
+    setStrand(timeline.strands[0].id)
     // what is there now is the first state of the world
     setYear(start)
   }
@@ -548,35 +744,18 @@ function TimelineSetup() {
   )
 }
 
-export function TimelineSettings() {
-  const raw = source.value
-  const t = raw.timeline
-  if (!t) return <TimelineSetup />
-  const set = (patch: Partial<Timeline>, merge?: string) => patchSource({ timeline: { ...t, ...patch } }, merge ? `timeline-${merge}` : undefined)
-  const setEra = (id: string, patch: Partial<Era>, merge?: string) => set({ eras: t.eras.map(e => (e.id === id ? { ...e, ...patch } : e)) }, merge ? `era-${id}-${merge}` : undefined)
-  const remove = async () => {
-    const y = year.peek() ?? t.end
-    const ok = await confirmDialog(
-      `Zeitleiste entfernen? Die Welt im Jahr ${formatYear(y, t)} wird zum zeitlosen Stand. Alles, was es in diesem Jahr nicht gibt, und alle datierten Änderungen gehen verloren (Rückgängig holt sie zurück). Ereignisse bleiben erhalten.`,
-      { yes: 'Entfernen' },
-    )
-    if (ok) commitSource(flattenAt(source.peek(), y))
-  }
+const setTimeline = (t: Timeline, merge?: string) => patchSource({ timeline: t }, merge)
+
+function EraList({ s, t }: { s: Strand; t: Timeline }) {
+  const set = (eras: Era[], merge?: string) => setTimeline({ ...t, strands: t.strands.map(x => (x.id === s.id ? { ...x, eras } : x)) }, merge)
+  const setEra = (id: string, patch: Partial<Era>, merge?: string) => set(s.eras.map(e => (e.id === id ? { ...e, ...patch } : e)), merge ? `era-${id}-${merge}` : undefined)
+  const r = reckoningOf(t, s.id)
+  const y = year.value
   return (
     <>
-      <Field label="Erstes Jahr" hint="was keinen eigenen Beginn hat, besteht ab hier">
-        <YearInput value={t.start} onChange={v => v != null && v < t.end && set({ start: v })} />
-      </Field>
-      <Field label="Letztes Jahr">
-        <YearInput value={t.end} onChange={v => v != null && v > t.start && set({ end: v })} />
-      </Field>
-      <Field label="Zusatz" hint="hinter jeder Jahreszahl">
-        <Text value={t.unit} onInput={v => set({ unit: v }, 'unit')} placeholder="z. B. n. Ü." />
-      </Field>
-      <h4 class="subhead">Epochen</h4>
-      {t.eras.length > 0 && (
+      {s.eras.length > 0 ? (
         <ul class="era-list">
-          {[...t.eras]
+          {[...s.eras]
             .sort((a, b) => a.start - b.start)
             .map(e => (
               <li key={e.id}>
@@ -584,21 +763,161 @@ export function TimelineSettings() {
                 <input type="text" value={e.name} onInput={ev => setEra(e.id, { name: (ev.target as HTMLInputElement).value }, 'name')} />
                 <span class="muted">ab</span>
                 <YearInput value={e.start} onChange={v => v != null && setEra(e.id, { start: v })} />
-                <button class="icon danger" title="Epoche löschen" onClick={() => set({ eras: t.eras.filter(x => x.id !== e.id) })}>
+                <button class="icon danger" title="Epoche löschen" onClick={() => set(s.eras.filter(x => x.id !== e.id))}>
                   🗑
                 </button>
               </li>
             ))}
         </ul>
+      ) : (
+        s.parent && <p class="hint">Ohne eigene Epochen gelten die des Elternstrangs.</p>
       )}
+      <button class="small" onClick={() => set([...s.eras, { id: newId('era'), name: `Epoche ${s.eras.length + 1}`, start: y != null ? toOwnYear(r, y) : toOwnYear(r, r.start), color: '#8f7aa4' }])}>
+        ＋ Epoche
+      </button>
+    </>
+  )
+}
+
+function StrandEditor({ s, t }: { s: Strand; t: Timeline }) {
+  const update = (patch: Partial<Strand>, merge?: string) => setTimeline({ ...t, strands: t.strands.map(x => (x.id === s.id ? { ...x, ...patch } : x)) }, merge ? `strand-${s.id}-${merge}` : undefined)
+  const isBase = s.parent == null
+  // strands below this one cannot become its parent
+  const below = t.strands.filter(x => chainOf(t, x.id).some(c => c.id === s.id)).map(x => x.id)
+  const r = reckoningOf(t, s.id)
+  const ownReckoning = isBase || s.zero != null || s.unit != null || s.start != null || s.end != null
+  const children = t.strands.filter(x => x.parent === s.id)
+  const remove = async () => {
+    const ok = await confirmDialog(`Strang „${s.name}“ löschen? Seine eigenen Elemente, Änderungen und Ereignisse gehen mit, ebenso alle Freigaben für ihn. Rückgängig holt alles zurück.`, { yes: 'Löschen' })
+    if (!ok) return
+    if (strand.peek() === s.id) setStrand(s.parent ?? baseStrand(t).id)
+    commitSource(removeStrandFromProject(source.peek(), s.id))
+  }
+  return (
+    <div class="strand-editor">
+      <Field label="Name">
+        <span class="inline">
+          <Color value={s.color} onChange={v => update({ color: v }, 'color')} />
+          <Text value={s.name} onInput={v => update({ name: v }, 'name')} />
+        </span>
+      </Field>
+      {!isBase && (
+        <>
+          <Field label="Leitet ab von">
+            <StrandSelect value={s.parent!} onChange={v => update({ parent: v })} exclude={below} label="Elternstrang" />
+          </Field>
+          <Field label="Übernimmt" hint={s.inherit === 'released' ? 'vom Elternstrang ist nur sichtbar, was hier freigegeben wird' : 'alles, was der Elternstrang zeigt, außer hier Verborgenem'}>
+            <Select
+              value={s.inherit}
+              onChange={v => update({ inherit: v })}
+              options={[
+                { id: 'all', name: 'alles' },
+                { id: 'released', name: 'nur Freigegebenes' },
+              ]}
+            />
+          </Field>
+        </>
+      )}
+      {!isBase && (
+        <label class="check">
+          <input
+            type="checkbox"
+            checked={!ownReckoning}
+            onChange={e =>
+              (e.target as HTMLInputElement).checked
+                ? update({ zero: null, unit: null, start: null, end: null })
+                : update({ zero: r.zero, unit: r.unit, start: toOwnYear(r, r.start), end: toOwnYear(r, r.end) })
+            }
+          />
+          <span>Zeitrechnung und Ausschnitt wie der Elternstrang</span>
+        </label>
+      )}
+      {ownReckoning && (
+        <>
+          {!isBase && (
+            <Field label="Jahr 0 entspricht" hint="diesem Jahr des Basisstrangs">
+              <YearInput value={s.zero} onChange={v => update({ zero: v ?? 0 })} />
+            </Field>
+          )}
+          <Field label="Zusatz" hint="hinter jeder Jahreszahl">
+            <Text value={s.unit ?? ''} onInput={v => update({ unit: v }, 'unit')} placeholder="z. B. n. Ü." />
+          </Field>
+          <Field label="Ausschnitt" hint="in den Jahren dieses Strangs">
+            <span class="inline">
+              <YearInput value={s.start ?? toOwnYear(r, r.start)} onChange={v => v != null && v < toOwnYear(r, r.end) && update({ start: v })} />
+              <span class="muted">bis</span>
+              <YearInput value={s.end ?? toOwnYear(r, r.end)} onChange={v => v != null && v > toOwnYear(r, r.start) && update({ end: v })} />
+            </span>
+          </Field>
+        </>
+      )}
+      <h4 class="subhead">Epochen</h4>
+      <EraList s={s} t={t} />
+      {!isBase && (
+        <div class="button-row">
+          <button class="danger" disabled={children.length > 0} title={children.length ? 'Erst die abgeleiteten Stränge löschen oder umhängen' : undefined} onClick={remove}>
+            Strang löschen …
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TimelineSettings() {
+  const raw = source.value
+  const t = raw.timeline
+  const [open, setOpen] = useState<string | null>(null)
+  if (!t) return <TimelineSetup />
+  const derive = (parent: Strand) => {
+    const created = newStrand(parent, `Strang ${t.strands.length + 1}`)
+    setTimeline({ ...t, strands: [...t.strands, created] })
+    setOpen(created.id)
+  }
+  const removeTimeline = async () => {
+    const y = year.peek() ?? 0
+    const ok = await confirmDialog(
+      `Zeitleiste entfernen? Die Welt im Jahr ${formatYear(y)} im Strang „${strandName(t, strand.peek())}“ wird zum zeitlosen Stand. Alles andere – andere Jahre, andere Stränge, datierte Änderungen – geht verloren (Rückgängig holt es zurück). Ereignisse dieses Strangs bleiben erhalten.`,
+      { yes: 'Entfernen' },
+    )
+    if (ok) commitSource(flattenAt(source.peek(), y, view.peek()))
+  }
+  return (
+    <>
+      <p class="hint">
+        Ein Basisstrang, beliebig viele abgeleitete. Ein abgeleiteter Strang zeigt die Welt seines Elternstrangs – alles oder nur Freigegebenes – und dazu Eigenes. Was du in einem Strang änderst, gilt dort und darunter.
+      </p>
+      <ul class="strand-tree">
+        {strandTree(t).map(({ strand: s, depth }) => (
+          <li key={s.id} style={{ paddingLeft: `${depth * 16}px` }}>
+            <div class="strand-row">
+              <Swatch color={s.color} />
+              <button class="link strand-name" onClick={() => setOpen(open === s.id ? null : s.id)}>
+                {s.name || '(ohne Namen)'}
+              </button>
+              <span class="muted">{s.parent == null ? 'Basis' : s.inherit === 'released' ? 'nur Freigegebenes' : 'erbt alles'}</span>
+              {strand.value === s.id ? (
+                <span class="strand-tag">gezeigt</span>
+              ) : (
+                <button class="small" onClick={() => setStrand(s.id)}>
+                  zeigen
+                </button>
+              )}
+              <button class="small" title="Einen Strang anlegen, der von diesem ableitet" onClick={() => derive(s)}>
+                ＋ ableiten
+              </button>
+            </div>
+            {open === s.id && <StrandEditor s={s} t={t} />}
+          </li>
+        ))}
+      </ul>
       <div class="button-row">
-        <button onClick={() => set({ eras: [...t.eras, { id: newId('era'), name: `Epoche ${t.eras.length + 1}`, start: year.peek() ?? t.start, color: '#8f7aa4' }] })}>＋ Epoche ab {year.value}</button>
-        <button class="danger" onClick={remove}>
+        <button class="danger" onClick={removeTimeline}>
           Zeitleiste entfernen …
         </button>
       </div>
       <p class="hint">
-        {changeYears(raw).length} Jahre mit Änderungen, {raw.events.length} Ereignisse.
+        {changeYears(raw, view.value).length} Jahre mit Änderungen im gezeigten Strang, {raw.events.length} Ereignisse insgesamt.
       </p>
     </>
   )

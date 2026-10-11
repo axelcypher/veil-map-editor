@@ -1,6 +1,7 @@
 // Creating, reading and writing projects, and new elements with sensible defaults.
 import { defaultCatalog, defaultDisplay, defaultKoppenClasses, defaultLayers, defaultStyle } from './catalog'
-import type { City, Culture, EntityKind, EntityMap, Institution, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Timeline, WorldEvent, Zone } from './types'
+import { migrateTimeline } from './timeline'
+import type { City, Culture, EntityKind, EntityMap, Institution, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Strand, Timeline, WorldEvent, Zone } from './types'
 
 export const PLANET_RADIUS = 6_606_727
 
@@ -193,10 +194,30 @@ export const KIND_NAMES: Record<EntityKind, [string, string]> = {
   regiment: ['Regiment', 'Regimenter'],
 }
 
-export const newTimeline = (start: number, end: number, unit = ''): Timeline => ({ start, end: Math.max(start + 1, end), unit, eras: [] })
+/** a timeline with one base strand */
+export const newTimeline = (start: number, end: number, unit = '', name = 'Hauptstrang'): Timeline => ({
+  strands: [{ id: newId('strand'), name, color: '#8f7aa4', parent: null, inherit: 'all', zero: 0, unit, start, end: Math.max(start + 1, end), eras: [] }],
+  milestones: [],
+  current: null,
+})
 
-export const newEvent = (p: Project, year: number): WorldEvent => ({
+/** a strand derived from `parent`, counting and showing like it */
+export const newStrand = (parent: Strand, name: string, color = '#c3cad4'): Strand => ({
+  id: newId('strand'),
+  name,
+  color,
+  parent: parent.id,
+  inherit: 'all',
+  zero: null,
+  unit: null,
+  start: null,
+  end: null,
+  eras: [],
+})
+
+export const newEvent = (p: Project, year: number, strand?: string): WorldEvent => ({
   id: newId('event'),
+  ...(strand ? { strand } : {}),
   name: `Ereignis ${p.events.length + 1}`,
   year,
   until: null,
@@ -216,6 +237,8 @@ export function parseProject(text: string): Project {
   merged.style = { ...fresh.style, ...data.style }
   for (const id of Object.keys(fresh.style) as (keyof Project['style'])[]) merged.style[id] = { ...fresh.style[id], ...data.style?.[id] }
   merged.display = { ...fresh.display, ...data.display }
+  // a timeline of an earlier version (one range) becomes a single base strand
+  merged.timeline = migrateTimeline(data.timeline)
   merged.archive = { ...fresh.archive, ...data.archive }
   merged.globe = { ...fresh.globe, ...data.globe }
   for (const key of ['sun', 'atmosphere', 'graticule', 'clouds', 'background', 'export'] as const) merged.globe[key] = { ...fresh.globe[key], ...data.globe?.[key] } as never

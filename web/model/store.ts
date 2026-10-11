@@ -6,29 +6,84 @@
 // into `source` as changes in that year (see timeline.ts). Without a timeline both are the same.
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
-import { record, removeFromProject, resolveWorld } from './timeline'
+import { baseStrand, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type View } from './timeline'
 import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
 
 export const source = signal<Project>(newProject())
-/** the year the world is shown in; null when the project has no timeline */
+/** the year the world is shown in, in base years; null when the project has no timeline */
 export const year = signal<number | null>(null)
-export const project = computed<Project>(() => resolveWorld(source.value, year.value))
+/** the strand shown; '' until there is a timeline */
+export const strand = signal('')
+/** the milestone shown; undefined: the timeline's current one, null: all */
+export const milestone = signal<string | null | undefined>(undefined)
+/** show what the strand holds back of its parent, faintly */
+export const showHeld = signal(false)
 
-/** the year in its range, or null without a timeline */
-export function clampYear(p: Project, wanted: number | null | undefined): number | null {
+/** the strand id, made valid for the project (unknown: the base) */
+function validStrand(p: Project, wanted: string | undefined) {
   const t = p.timeline
-  if (!t) return null
-  return Math.round(Math.min(t.end, Math.max(t.start, wanted ?? t.end)))
+  if (!t) return ''
+  return t.strands.some(s => s.id === wanted) ? wanted! : baseStrand(t).id
 }
 
-/** shows the world in another year; remembered with the view, per device */
-export function setYear(wanted: number) {
+export const view = computed<View>(() => ({ strand: strand.value, milestone: milestone.value }))
+export const project = computed<Project>(() => resolveWorld(source.value, year.value, view.value, showHeld.value))
+/** how the strand shown counts its years */
+export const reckoning = computed(() => {
+  const t = source.value.timeline
+  return t ? reckoningOf(t, strand.value) : null
+})
+
+/** the year in the shown strand's stretch (base years), or null without a timeline */
+export function clampYear(p: Project, wanted: number | null | undefined, strandId = strand.peek()): number | null {
+  const t = p.timeline
+  if (!t) return null
+  const r = reckoningOf(t, validStrand(p, strandId))
+  return Math.round(Math.min(r.end, Math.max(r.start, wanted ?? r.end)))
+}
+
+/** remembered with the view, per device; the view is no undo step and no reason to save */
+function rememberView() {
   const p = source.peek()
-  const next = clampYear(p, wanted)
+  p.view = { ...p.view, year: year.peek() ?? undefined, strand: strand.peek() || undefined, milestone: milestone.peek() }
+}
+
+/** shows the world in another year (base years) */
+export function setYear(wanted: number) {
+  const next = clampYear(source.peek(), wanted)
   if (next === year.peek()) return
-  // the view is no undo step and no reason to save
-  p.view = { ...p.view, year: next ?? undefined }
   year.value = next
+  rememberView()
+}
+
+/** shows another strand; the year stays where it is in time, as far as the strand's stretch allows */
+export function setStrand(id: string) {
+  const p = source.peek()
+  const next = validStrand(p, id)
+  batch(() => {
+    strand.value = next
+    year.value = clampYear(p, year.peek(), next)
+  })
+  rememberView()
+}
+
+export function setMilestone(id: string | null | undefined) {
+  milestone.value = id
+  rememberView()
+}
+
+/** the strand edited in, as stored on entries (undefined: the base) */
+export const editStrand = () => {
+  const t = source.peek().timeline
+  return t ? storedStrand(t, strand.peek()) : undefined
+}
+
+/** keeps strand and year valid after the stored project changed */
+function settleView(p: Project) {
+  const s = validStrand(p, strand.peek())
+  if (s !== strand.peek()) strand.value = s
+  year.value = clampYear(p, year.peek(), s)
+  if (!p.timeline) milestone.value = undefined
 }
 export const filePath = signal<string | null>(null)
 export const dirty = signal(false)
@@ -118,7 +173,7 @@ export const canRedo = computed(() => (historyVersion.value, future.length > 0))
  * undo step.
  */
 export function commit(next: Project, merge?: string) {
-  commitSource(record(source.peek(), project.peek(), next, year.peek()), merge)
+  commitSource(record(source.peek(), project.peek(), next, year.peek(), view.peek()), merge)
 }
 
 /** replaces the stored project itself, history and all */
@@ -133,7 +188,7 @@ export function commitSource(next: Project, merge?: string) {
   lastMerge = merge ? { key: merge, at: now } : null
   batch(() => {
     source.value = next
-    year.value = clampYear(next, year.peek())
+    settleView(next)
     dirty.value = true
     historyVersion.value++
     fixSelection()
@@ -147,7 +202,7 @@ export function undo() {
   lastMerge = null
   batch(() => {
     source.value = previous
-    year.value = clampYear(previous, year.peek())
+    settleView(previous)
     dirty.value = true
     historyVersion.value++
     fixSelection()
@@ -161,7 +216,7 @@ export function redo() {
   lastMerge = null
   batch(() => {
     source.value = next
-    year.value = clampYear(next, year.peek())
+    settleView(next)
     dirty.value = true
     historyVersion.value++
     fixSelection()
@@ -178,7 +233,10 @@ export function resetProject(next: Project, path: string | null) {
   lastMerge = null
   batch(() => {
     source.value = next
-    year.value = clampYear(next, next.view.year)
+    strand.value = validStrand(next, next.view.strand)
+    milestone.value = next.view.milestone
+    showHeld.value = false
+    year.value = clampYear(next, next.view.year, strand.value)
     filePath.value = path
     dirty.value = false
     selection.value = null
@@ -192,8 +250,8 @@ function fixSelection() {
   const s = selection.peek()
   if (s && !findEntity(s.kind, s.id)) selection.value = null
 }
-// an element that does not exist in the year now shown is no longer selected
-year.subscribe(() => fixSelection())
+// an element that does not show in the year and strand now shown is no longer selected
+project.subscribe(() => fixSelection())
 
 export function list<K extends EntityKind>(kind: K, p: Project = project.value): EntityMap[K][] {
   return p[COLLECTION[kind]] as unknown as EntityMap[K][]
@@ -238,7 +296,10 @@ export function updateMany<K extends EntityKind>(kind: K, patches: Map<string, P
  * cleared, never left dangling). To let it end in a year, set its `end` instead.
  */
 export function removeEntity(kind: EntityKind, id: string) {
-  commitSource(removeFromProject(source.peek(), kind, id))
+  const stored = storedEntity(kind, id)
+  // an element of another strand is only hidden in the strand shown
+  if (stored && stored.strand !== editStrand()) commit(withList(project.peek(), kind, list(kind).filter(e => e.id !== id)))
+  else commitSource(removeFromProject(source.peek(), kind, id))
   if (selection.value?.id === id) selection.value = null
 }
 
@@ -257,4 +318,10 @@ export function patchSource(patch: Partial<Project>, merge?: string) {
 
 export function patchProject(patch: Partial<Project>, merge?: string) {
   commit({ ...project.value, ...patch }, merge)
+}
+
+/** adds an element to the stored project as it is (e.g. a copy for another strand) */
+export function addStored<K extends EntityKind>(kind: K, entity: EntityMap[K]) {
+  const p = source.peek()
+  commitSource(withList(p, kind, [...list(kind, p), entity]))
 }

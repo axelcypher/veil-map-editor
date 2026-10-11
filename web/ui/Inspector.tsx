@@ -6,7 +6,7 @@ import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { notify, project, removeEntity, selectedEntity, selection, snapCities, tool, updateEntity, year } from '../model/store'
+import { editStrand, notify, project, removeEntity, selectedEntity, selection, snapCities, storedEntity, tool, updateEntity, year } from '../model/store'
 import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
 import type { AreaBase, City, Culture, Entity, EntityKind, Institution, Label, LonLat, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
@@ -682,7 +682,17 @@ export function Inspector() {
           <button class="icon" title="Auf der Karte zeigen" onClick={() => mapView.current?.focus(kind, entity.id)}>
             ⌖
           </button>
-          <button class="icon danger" title={year.value != null ? 'Für immer löschen, in allen Jahren (Entf). Soll es nur enden: unter „Zeit“ ein Ende setzen.' : 'Löschen (Entf)'} onClick={() => removeEntity(kind, entity.id)}>
+          <button
+            class="icon danger"
+            title={
+              year.value == null
+                ? 'Löschen (Entf)'
+                : storedEntity(kind, entity.id)?.strand !== editStrand()
+                  ? 'In diesem Strang ausblenden (Entf); das Original bleibt'
+                  : 'Für immer löschen, in allen Jahren (Entf). Soll es nur enden: unter „Zeit“ ein Ende setzen.'
+            }
+            onClick={() => removeEntity(kind, entity.id)}
+          >
             🗑
           </button>
           <button class="icon" title="Schließen" onClick={() => (selection.value = null)}>

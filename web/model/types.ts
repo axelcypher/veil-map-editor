@@ -13,19 +13,43 @@ export const AREA_KINDS = ['state', 'province', 'culture', 'religion', 'zone', '
 export type AreaKind = (typeof AREA_KINDS)[number]
 
 /**
- * A dated change of an element: from `year` on, the fields in `set` hold, until a later change
- * sets them again. A field set to null was emptied.
+ * Whether an entry of a parent strand shows in a derived strand. In a strand that takes over only
+ * what is released, `show` releases it; in one that inherits everything, `show: false` hides it.
+ * `from` and `until` (milestone ids) limit that to a stretch of milestones.
  */
-export interface Change {
+export interface Visibility {
+  show: boolean
+  from?: string
+  until?: string
+}
+
+/** what every entry of the timeline carries: the strand it belongs to and how it shows below it */
+export interface Owned {
+  /** the strand the entry belongs to; absent: the base strand */
+  strand?: string
+  /** per derived strand: released or hidden there */
+  visibility?: Record<string, Visibility>
+}
+
+/**
+ * A dated change of an element: from `year` on, the fields in `set` hold, until a later change
+ * sets them again. A field set to null was emptied. A change of a derived strand on an element
+ * of another strand is a deviation (it overrides in that strand and below it).
+ */
+export interface Change extends Owned {
   year: number
   set: Record<string, unknown>
   /** why it changed, free text */
   note?: string
   /** id of the event the change belongs to */
   event?: string
+  /** the change holds from this milestone on (id) */
+  from?: string
+  /** and until this milestone (id); e.g. a falsification until it is corrected */
+  until?: string
 }
 
-export interface Base {
+export interface Base extends Owned {
   id: string
   name: string
   /** free text attached to the element */
@@ -38,6 +62,8 @@ export interface Base {
   end?: number
   /** its changes, oldest first; the fields of the element itself hold before the first one */
   history?: Change[]
+  /** another begin and end in a derived strand (and below it); null: open */
+  life?: Record<string, { begin: number | null; end: number | null }>
 }
 
 export interface AreaBase extends Base {
@@ -402,7 +428,7 @@ export interface ImageLayerRef {
   importedAt: number
 }
 
-/** a named stretch of the world's history, from its start year to the start of the next */
+/** a named stretch of the world's history, from its start year (in the strand's own years) to the start of the next */
 export interface Era {
   id: string
   name: string
@@ -410,15 +436,42 @@ export interface Era {
   color: string
 }
 
-/** years are whole numbers in the world's own reckoning */
-export interface Timeline {
-  /** the first year on record: what has no own begin exists from here */
-  start: number
-  /** the last year the bar shows */
-  end: number
-  /** shown after a year, e.g. "n. Ü." */
-  unit: string
+/**
+ * A view of the world. Exactly one strand is the base (no parent); every other one derives from a
+ * parent: it shows the parent's world (all of it, or only what is released) plus its own entries.
+ * Years are stored in the base strand's reckoning; each strand shows them in its own.
+ */
+export interface Strand {
+  id: string
+  name: string
+  color: string
+  parent: string | null
+  /** 'all': what the parent shows shows here too; 'released': only what is released here */
+  inherit: 'all' | 'released'
+  /** the base year that is year 0 here; null: as the parent (the base strand: 0) */
+  zero: number | null
+  /** shown after a year, e.g. "n. Ü."; null: as the parent */
+  unit: string | null
+  /** the stretch shown, in the strand's own years; null: as the parent */
+  start: number | null
+  end: number | null
+  /** none: those of the parent */
   eras: Era[]
+}
+
+/** a point in the telling of the story, e.g. a release; a list in order */
+export interface Milestone {
+  id: string
+  name: string
+  description: string
+}
+
+/** years are whole numbers */
+export interface Timeline {
+  strands: Strand[]
+  milestones: Milestone[]
+  /** the milestone reached now: what a view shows unless it picks another; null: all */
+  current: string | null
 }
 
 export interface EntityRef {
@@ -427,7 +480,7 @@ export interface EntityRef {
 }
 
 /** something that happened: a war, a treaty, a founding; may last several years */
-export interface WorldEvent {
+export interface WorldEvent extends Owned {
   id: string
   name: string
   year: number
@@ -483,6 +536,6 @@ export interface Project {
   obsidian: { vaultPath: string; vaultName: string }
   archive: ArchiveOptions
   globe: GlobeOptions
-  /** per device: where the map looks and which year it shows */
-  view: { center: LonLat; zoom: number; year?: number }
+  /** per device: where the map looks, which strand, year (base years) and milestone it shows */
+  view: { center: LonLat; zoom: number; year?: number; strand?: string; milestone?: string | null }
 }

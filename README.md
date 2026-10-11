@@ -52,6 +52,16 @@ Die Welt wird aus der Ferne beobachtet und verändert sich: Reiche entstehen und
 - **Epochen** benennen Zeitabschnitte (Projekteinstellungen → Zeitleiste).
 - **Export:** GeoJSON und JSON zeigen die Welt im gewählten Jahr (mit Feld `year`).
 
+### Stränge
+
+Eine Zeitleiste hat einen **Basisstrang** und beliebig viele **abgeleitete Stränge** (Projekteinstellungen → Zeitleiste), z. B. Hauptkanon (Wahrheit) → Leserkanon (öffentliche Fassung) → Parallelkanon (Arbeitsversion). Namen, Farben, Elternstrang und alles Weitere sind frei einstellbar.
+
+- **Übernahme:** Ein abgeleiteter Strang zeigt die Welt seines Elternstrangs – **alles** (außer dort Verborgenem) oder **nur Freigegebenes** – und dazu Eigenes.
+- **Zeitrechnung und Ausschnitt** je Strang: „Jahr 0 entspricht“ einem Jahr des Basisstrangs, eigener Zusatz, eigener Ausschnitt, eigene Epochen; oder wie der Elternstrang. Intern stehen alle Jahre in der Rechnung des Basisstrangs.
+- **Strang wählen:** links in der Leiste unter der Karte. Karte, Listen, Chronik und alle Werkzeuge zeigen dann diesen Strang.
+- **Bearbeiten:** Neue Elemente und Ereignisse gehören zum gezeigten Strang. Änderungen an einem Element eines anderen Strangs werden zur **Abweichung** im gezeigten Strang (und darunter) ab dem gezeigten Jahr; das Original bleibt. Der Inspector zeigt das im Kopf („Abweichung ab …“). Löschen blendet ein geerbtes Element nur im gezeigten Strang aus.
+- **Verschieben und Kopieren:** Elemente, Änderungen und Ereignisse lassen sich mit ⇄ in einen anderen Strang verschieben oder dorthin kopieren. Ein geerbtes Ereignis bekommt über „Abweichende Fassung“ eine eigene Version im gezeigten Strang.
+
 **Institutionen** (Gilden, Orden, Handelshäuser, Kirchen, Akademien, Bünde …) sind eine eigene Elementart: Art, Sitz, zugehöriger Staat, Religion, Kultur, Leitung, Mitglieder und ein freiwilliges Einflussgebiet. Wie alles andere verändern sie sich über die Zeitleiste.
 
 ## Projektdatei
@@ -62,19 +72,34 @@ Die Welt wird aus der Ferne beobachtet und verändert sich: Reiche entstehen und
 
 Für Programme, die das Projekt lesen, etwa vom Sync-Server (veil-agents). Jahre sind ganze Zahlen in der Zeitrechnung der Welt.
 
+Alle Jahre stehen in der Rechnung des Basisstrangs.
+
 | Feld | Bedeutung |
 | --- | --- |
-| `timeline` | `null` ohne Zeitleiste, sonst `{ start, end, unit, eras: [{ id, name, start, color }] }` |
-| Element `.begin` | erstes Jahr, in dem es besteht; fehlt: seit `timeline.start` |
+| `timeline` | `null` ohne Zeitleiste, sonst `{ strands, milestones, current }` |
+| `timeline.strands` | `[{ id, name, color, parent, inherit, zero, unit, start, end, eras }]`. Genau einer hat `parent: null` (Basis). `inherit`: `"all"` oder `"released"`. `zero`: das Basisjahr, das in diesem Strang Jahr 0 heißt; `start`/`end` (Ausschnitt) und `eras[].start` in den eigenen Jahren des Strangs; `null` heißt: wie der Elternstrang |
+| `timeline.milestones` | `[{ id, name, description }]` in Reihenfolge; `current`: der erreichte Meilenstein oder `null` |
+| `.strand` an Element, Änderung, Ereignis | der Strang, dem der Eintrag gehört; fehlt: der Basisstrang |
+| `.visibility` an Element, Änderung, Ereignis | `{ <Strang-ID>: { show, from?, until? } }`: in einem Strang mit `inherit: "released"` gibt `show: true` frei, in einem mit `"all"` verbirgt `show: false`. `from`/`until` sind Meilenstein-IDs |
+| Element `.begin` | erstes Jahr, in dem es besteht; fehlt: offen |
 | Element `.end` | erstes Jahr, in dem es **nicht mehr** besteht; fehlt: besteht fort |
-| Element `.history` | `[{ year, set, note?, event? }]`, aufsteigend nach Jahr. Ab `year` gelten die Felder in `set`; `null` heißt geleert |
+| Element `.life` | `{ <Strang-ID>: { begin, end } }`: abweichender Beginn und abweichendes Ende in einem Strang (und darunter) |
+| Element `.history` | `[{ year, set, strand?, note?, event?, from?, until?, visibility? }]`. Ab `year` gelten die Felder in `set`; `null` heißt geleert. Eine Änderung eines anderen Strangs als dem des Elements ist eine Abweichung. `from`/`until`: gilt nur zwischen diesen Meilensteinen |
 | Felder des Elements | sein Zustand vor der ersten Änderung |
 | `diplomacy` | Beziehungen vor der ersten Änderung: `"a>b"` → Beziehungs-ID (Sicht von a auf b) |
-| `diplomacyHistory` | `[{ year, set }]` wie oben; `""` in `set` hebt eine Beziehung auf |
-| `events` | `[{ id, name, year, until, type, description, note, refs: [{ kind, id }] }]`; `until` ist das letzte Jahr oder `null` |
+| `diplomacyHistory` | `[{ year, set, strand?, visibility? }]` wie oben; `""` in `set` hebt eine Beziehung auf |
+| `events` | `[{ id, name, year, until, type, description, note, refs: [{ kind, id }], strand?, visibility? }]`; `until` ist das letzte Jahr oder `null` |
 | `catalog.eventTypes`, `catalog.institutionTypes` | Arten von Ereignissen (mit Farbe) und Institutionen |
 
-Die Welt im Jahr *J*: Ein Element besteht, wenn `begin ≤ J < end` (fehlende Grenzen gelten als offen). Sein Zustand sind seine eigenen Felder, darüber der Reihe nach die `set` aller Änderungen mit `year ≤ J`. Die Diplomatie genauso. [`web/model/timeline.ts`](web/model/timeline.ts) macht genau das und hängt nur von Typen ab, lässt sich also übernehmen: `resolveWorld(project, J)` liefert das ganze Projekt im Jahr *J*, `entityAt(element, J)` ein einzelnes Element, `diplomacyAt(…)` die Beziehungen, `happeningsIn(project, J)` was in einem Jahr geschieht.
+Die Welt eines Strangs *S* im Jahr *J* beim Meilenstein *M* (fehlt *M*: `current`; ohne Meilenstein: alles):
+
+1. Die **Kette** ist der Weg vom Basisstrang bis *S*.
+2. Ein **Eintrag zählt**, wenn er einem Strang der Kette gehört, bei *M* gilt (`from`/`until`) und auf jeder Stufe unterhalb seines Strangs sichtbar ist: in einem Strang mit `"released"` freigegeben, in einem mit `"all"` nicht verborgen (jeweils bei *M*).
+3. Ein **Element** besteht, wenn es zählt und `begin ≤ J < end` – mit `life` des tiefsten Strangs der Kette, der eines gesetzt hat.
+4. Sein **Zustand** sind seine eigenen Felder, darüber die `set` aller zählenden Änderungen mit `year ≤ J`, nach Jahr; im selben Jahr die des tieferen Strangs zuletzt.
+5. Die **Diplomatie**: die ersten Beziehungen zwischen Staaten, die zählen, darüber die zählenden Änderungen.
+
+[`web/model/timeline.ts`](web/model/timeline.ts) macht genau das und hängt nur von Typen ab, lässt sich also übernehmen: `resolveWorld(project, J, { strand, milestone })` liefert das ganze Projekt, `eventsIn(project, view)` die Ereignisse, `happeningsIn(project, J, view)` was in einem Jahr geschieht, `reckoningOf(timeline, strand)` und `toOwnYear`/`toBaseYear` die Zeitrechnung eines Strangs. Dateien mit der Zeitleiste von 0.11 (`{ start, end, unit, eras }`) werden beim Öffnen zu einem einzigen Basisstrang.
 
 Listen der Elemente: `states`, `provinces`, `cultures`, `religions`, `zones`, `institutions`, `cities`, `routes`, `rivers`, `labels`, `markers`, `regiments`.
 

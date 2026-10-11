@@ -432,7 +432,7 @@ button.link:hover:not(:disabled) { background: none; color: var(--text); }
 .tl-controls button { width: 30px; height: 30px; padding: 0; font-size: 13px; }
 .tl-year { display: flex; align-items: baseline; gap: 6px; flex: none; }
 .tl-year .year-input {
-  width: 84px; font-family: "Cinzel", serif; font-size: 18px; font-weight: 600; text-align: right; padding: 1px 6px;
+  width: 112px; font-family: "Cinzel", serif; font-size: 18px; font-weight: 600; text-align: right; padding: 1px 6px;
   background: transparent; border-color: transparent; color: var(--text);
 }
 .tl-year .year-input:hover { border-color: var(--line); }
@@ -509,3 +509,18 @@ button.link:hover:not(:disabled) { background: none; color: var(--text); }
 button.danger { color: var(--danger); }
 button.danger:hover:not(:disabled) { border-color: var(--danger); }
 .subhead { margin-top: 10px; }
+
+/* strands */
+.tl-strand { display: inline-flex; border-left: 4px solid; padding-left: 6px; flex: none; }
+.tl-strand select { width: auto; max-width: 180px; font-family: "Marcellus", serif; background: transparent; border-color: transparent; }
+.tl-strand select:hover { border-color: var(--line); }
+.edit-year.deviation { background: #c3cad433; }
+.origin { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+select.strand-action { width: 52px; flex: none; padding: 1px 4px; font-size: 12px; margin-left: auto; }
+.change-list li.inherited { border-style: dashed; }
+.change-strand { font-size: 11px; color: var(--accent-2); }
+.strand-tag { font-size: 10.5px; padding: 0 6px; border-radius: var(--round); border: 1px solid var(--line); color: var(--accent-2); white-space: nowrap; }
+.strand-tree { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.strand-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.strand-name { font-family: "Marcellus", serif; font-size: 14px; text-decoration: none; color: var(--text); }
+.strand-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; margin: 4px 0 6px; display: flex; flex-direction: column; gap: 6px; }

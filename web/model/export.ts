@@ -5,7 +5,8 @@ import { cityMembership, cultureStats, provinceStats, religionStats, stateStats 
 import { areaKm2, lineLengthM } from './geo'
 import { readFrontmatter } from './obsidian'
 import { fullPath } from './routing'
-import { notify, project, year } from './store'
+import { notify, project, reckoning, source, strand, year } from './store'
+import { eventsIn, toOwnYear } from './timeline'
 import { clippedGeometry } from './terrain'
 import { COLLECTION, type AreaBase, type Entity, type EntityKind, type Project } from './types'
 
@@ -155,14 +156,23 @@ async function featuresOf(p: Project, kind: EntityKind, options: GeoJsonOptions)
   return out
 }
 
+/** the year (in the strand's own reckoning and in base years) and strand of the world exported */
+function yearInfo() {
+  const y = year.value
+  const r = reckoning.value
+  const t = source.value.timeline
+  if (y == null || !r || !t) return {}
+  return { year: toOwnYear(r, y), baseYear: y, strand: t.strands.find(s => s.id === strand.value)?.name ?? strand.value }
+}
+
 function collection(p: Project, features: unknown[], name: string) {
   return {
     type: 'FeatureCollection',
     name,
     // degrees on the planet sphere; the same definition QGIS knows as "Thessari - geo"
     crs: { type: 'name', properties: { name: `+proj=longlat +R=${p.planetRadius} +no_defs` } },
-    // with a timeline: the world as it was in this year
-    ...(year.value != null ? { year: year.value } : {}),
+    // with a timeline: the world as it was in this year and strand
+    ...yearInfo(),
     features,
   }
 }
@@ -219,8 +229,9 @@ export async function exportJson(target?: string) {
     exportedAt: new Date().toISOString(),
     planet: { radiusM: p.planetRadius, crs: `+proj=longlat +R=${p.planetRadius} +no_defs` },
     terrain: p.terrain ? { source: p.terrain.source, hash: p.terrain.hash, importedAt: new Date(p.terrain.importedAt).toISOString() } : null,
-    // with a timeline: the world as it was in this year, and what had happened by then
-    ...(year.value != null ? { year: year.value, events: p.events.filter(e => e.year <= year.value!).sort((a, b) => a.year - b.year) } : {}),
+    // with a timeline: the world as it was in this year and strand, and what had happened by then
+    ...yearInfo(),
+    ...(year.value != null ? { events: eventsIn(source.value, { strand: strand.value }).filter(e => e.year <= year.value!).sort((a, b) => a.year - b.year) } : {}),
     ...layers,
     diplomacy: Object.entries(p.diplomacy).map(([key, relation]) => {
       const [a, b] = key.split('>')
