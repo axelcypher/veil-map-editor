@@ -5,11 +5,12 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
 import { KIND_NAMES, newEvent, newId, newStrand, newTimeline } from '../model/project'
 import {
-  addStored, commitSource, editStrand, patchSource, project, reckoning, selection, setStrand, setYear, source, storedEntity, strand, updateEntity, updateStored, view, year,
+  addStored, commitSource, editStrand, patchSource, project, reckoning, selection, setStrand, setYear, showHeld, source, storedEntity, strand, updateEntity, updateStored, view, year,
 } from '../model/store'
 import {
   baseStrand, chainOf, changesOf, changeToStrand, changeYears, copyElement, editChange, elementToStrand, entityYears, eventsIn, eventToStrand, flattenAt, happeningsIn,
-  lifeOf, moveChange, reckoningOf, removeEventFromProject, removeStrandFromProject, setVisibility, storedStrand, toBaseYear, toOwnYear, visibleIn, type Reckoning,
+  heldIn, holdEntry, lifeOf, moveChange, reckoningOf, releaseElement, releaseEvent, releaseYear, removeEventFromProject, removeStrandFromProject, setVisibility, showEntry, storedStrand,
+  toBaseYear, toOwnYear, visibleIn, type Reckoning,
 } from '../model/timeline'
 import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Project, type Strand, type Timeline, type WorldEvent } from '../model/types'
 import { mapView } from './mapRef'
@@ -98,6 +99,18 @@ function StrandSelect({ value, onChange, exclude, label }: { value: string; onCh
     </select>
   )
 }
+
+/** the strand shown, if it derives from another: what it calls taking over and holding back */
+export function heldWords(t: Timeline | null = source.value.timeline, id = strand.value) {
+  const s = t?.strands.find(x => x.id === id)
+  if (!t || !s?.parent) return null
+  return s.inherit === 'released'
+    ? { show: 'freigeben', hold: 'Freigabe zurücknehmen', held: 'nicht freigegeben', strand: s }
+    : { show: 'einblenden', hold: 'ausblenden', held: 'ausgeblendet', strand: s }
+}
+
+/** applies a release to the stored project, in the view shown */
+const releaseNow = (fn: (p: Project) => Project) => commitSource(fn(source.peek()))
 
 // ---------------------------------------------------------------------------------------------
 // the bar
@@ -215,10 +228,61 @@ export function TimelineBar() {
           <span>{toOwnYear(r, r.end)}</span>
         </div>
       </div>
+      {current?.parent && (
+        <button
+          class={`small${showHeld.value ? ' active' : ''}`}
+          onClick={() => (showHeld.value = !showHeld.value)}
+          title={`Was „${current.name}“ vom Elternstrang ${current.inherit === 'released' ? 'nicht freigegeben' : 'ausgeblendet'} hat, blass zeigen – zum ${current.inherit === 'released' ? 'Freigeben' : 'Einblenden'}`}
+        >
+          ◌ Zurückgehaltenes
+        </button>
+      )}
       <button class="small" onClick={addEvent} title="Neues Ereignis in diesem Jahr und Strang, in der Chronik bearbeiten">
         ＋ Ereignis
       </button>
     </div>
+  )
+}
+
+/** the inspector for an element the strand shown holds back: what it is, and taking it over */
+export function HeldInspector({ kind, entity }: { kind: EntityKind; entity: Base }) {
+  const t = source.value.timeline
+  const y = year.value
+  const r = reckoning.value
+  const words = heldWords()
+  if (!t || !words || y == null || !r) return null
+  const stored = storedEntity(kind, entity.id)
+  const later = stored ? changesOf(source.value, view.value, stored, true).filter(c => c.year <= y && !visibleIn(source.value, view.value, c)).length : 0
+  return (
+    <aside class="inspector held">
+      <header>
+        <span class="kind">
+          {KIND_NAMES[kind][0]} <span class="edit-year deviation">{words.held}</span>
+        </span>
+        <div class="header-actions">
+          <button class="icon" title="Schließen" onClick={() => (selection.value = null)}>
+            ✕
+          </button>
+        </div>
+      </header>
+      <div class="inspector-body">
+        <h3 class="held-name">{entity.name || '(ohne Namen)'}</h3>
+        <p class="hint">
+          Gehört zu „{strandName(t, stored?.strand)}“ und ist in „{words.strand.name}“ {words.held}. So sieht es im Elternstrang aus; bearbeiten lässt es sich erst, wenn es hier sichtbar ist.
+        </p>
+        {entity.description && <p class="muted">{entity.description}</p>}
+        <div class="button-grid">
+          <button class="primary" onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, null))} title="Nur das Element mit seinem ersten Stand; spätere Änderungen bleiben zurückgehalten">
+            {words.show}
+          </button>
+          {later > 0 && (
+            <button onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, y))} title={`Auch die ${later} Änderungen bis ${formatYear(y, r)}`}>
+              mit Verlauf bis {toOwnYear(r, y)} {words.show}
+            </button>
+          )}
+        </div>
+      </div>
+    </aside>
   )
 }
 
@@ -367,7 +431,12 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
   // begin and end go through the world: on an own element they are its own, on another one a deviation
   const setLife = (key: 'begin' | 'end', value: number | null) => updateEntity(kind, id, { [key]: value ?? undefined } as never)
   const changes = changesOf(raw, v, stored)
+  const words = heldWords(t)
+  // what the parent has and this strand holds back, when asked for
+  const held = words && showHeld.value ? changesOf(raw, v, stored, true).filter(c => !changes.includes(c)) : []
   const many = t.strands.length > 1
+  const setChangeShown = (c: Change, show: boolean) =>
+    editStored(e => ({ ...e, history: (e.history ?? []).map(x => (x === c ? (show ? showEntry(t, x, strand.peek()) : holdEntry(t, x, strand.peek())) : x)) }))
   return (
     <Section title="Zeit" open>
       {many && (
@@ -445,6 +514,11 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
                   )}
                 </div>
                 {many && c.strand !== stored.strand && <span class="change-strand">{mine ? 'Abweichung' : 'aus'} „{strandName(t, c.strand)}“</span>}
+                {!mine && words && (
+                  <button class="small hold" onClick={() => setChangeShown(c, false)} title={`Diese Änderung in „${words.strand.name}“ zurückhalten`}>
+                    {words.hold}
+                  </button>
+                )}
                 {mine ? (
                   <>
                     <input type="text" placeholder="Anlass, Grund …" value={c.note ?? ''} onInput={e => editStored(x => editChange(x, ref, ch => ({ ...ch, note: (e.target as HTMLInputElement).value || undefined })), `note-${c.year}`)} />
@@ -459,6 +533,26 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
         </ol>
       ) : (
         <p class="hint">Noch keine Änderungen. Zum gewünschten Jahr springen und das Element dort bearbeiten.</p>
+      )}
+      {held.length > 0 && words && (
+        <>
+          <h4 class="subhead">{words.held[0].toUpperCase() + words.held.slice(1)}</h4>
+          <ol class="change-list">
+            {held.map(c => (
+              <li key={`${c.year}|${c.strand ?? ''}`} class="held">
+                <div class="change-head">
+                  <button class="link change-year" onClick={() => setYear(c.year)}>
+                    {formatYear(c.year, r)}
+                  </button>
+                  <span class="change-fields">{describeChange(c.set, project.value) || 'nur Anmerkung'}</span>
+                  <button class="small" onClick={() => setChangeShown(c, true)}>
+                    {words.show}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </>
       )}
     </Section>
   )
@@ -483,8 +577,40 @@ function YearReport({ y }: { y: number }) {
   const world = project.value
   const name = (kind: EntityKind, id: string) => `${(world[COLLECTION[kind]] as unknown as Base[]).some(e => e.id === id) ? nameOfId(world, id) : nameOfId(raw, id)} (${KIND_NAMES[kind][0]})`
   const relationName = (id: string) => raw.catalog.relations.find(rel => rel.id === id)?.name ?? 'keine'
-  if (!entries.length && !relations.length && !events.length) return <p class="empty">In diesem Jahr ändert sich nichts.</p>
+  const words = heldWords()
+  const held = words ? heldIn(raw, v, y) : []
+  const heldPart = held.length > 0 && words && (
+    <div class="held-report">
+      <span class="muted">
+        {held.length} {words.held}
+      </span>
+      <button class="small" onClick={() => releaseNow(p => releaseYear(p, view.peek(), y))} title="Elemente, die hier entstehen, Änderungen, Beziehungen und Ereignisse dieses Jahres">
+        alles aus diesem Jahr {words.show}
+      </button>
+      {showHeld.value && (
+        <ul class="year-report">
+          {held.map((h, i) => (
+            <li key={i} class="held" onClick={() => h.kind && pick(h.kind, h.id)}>
+              <span class="what">{h.type === 'element' ? 'entsteht' : h.type === 'event' ? 'Ereignis' : h.type === 'relation' ? 'Beziehung' : 'ändert sich'}</span>{' '}
+              {h.type === 'event' ? raw.events.find(e => e.id === h.id)?.name : h.kind ? name(h.kind, h.id) : ''}
+              {h.change && <span class="muted"> · {describeChange(h.change.set, world)}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+  if (!entries.length && !relations.length && !events.length) {
+    return (
+      <>
+        <p class="empty">In diesem Jahr ändert sich nichts{held.length ? ' Sichtbares' : ''}.</p>
+        {heldPart}
+      </>
+    )
+  }
   return (
+    <>
+    {heldPart}
     <ul class="year-report">
       {events.map(e => (
         <li key={e.id} class="event" onClick={() => (selectedEvent.value = e.id)}>
@@ -512,6 +638,7 @@ function YearReport({ y }: { y: number }) {
           }),
       )}
     </ul>
+    </>
   )
 }
 
@@ -583,9 +710,25 @@ function EventEditor({ event }: { event: WorldEvent }) {
           </div>
         )}
         <div class="button-row">
-          <button onClick={deviate} title="Eine eigene Fassung in diesem Strang anlegen; das Original wird hier ausgeblendet">
-            Abweichende Fassung in „{strandName(t, strand.value)}“
-          </button>
+          {visibleIn(raw, view.value, event) ? (
+            <>
+              <button onClick={deviate} title="Eine eigene Fassung in diesem Strang anlegen; das Original wird hier ausgeblendet">
+                Abweichende Fassung in „{strandName(t, strand.value)}“
+              </button>
+              {heldWords() && <button onClick={() => setEvents(source.peek().events.map(e => (e.id === event.id ? holdEntry(t, e, strand.peek()) : e)))}>{heldWords()!.hold}</button>}
+            </>
+          ) : (
+            heldWords() && (
+              <>
+                <button class="primary" onClick={() => setEvents(source.peek().events.map(e => (e.id === event.id ? showEntry(t, e, strand.peek()) : e)))}>
+                  {heldWords()!.show}
+                </button>
+                <button onClick={() => releaseNow(p => releaseEvent(p, view.peek(), event.id))} title="Das Ereignis und alle Änderungen, die es nennen">
+                  mit seinen Änderungen {heldWords()!.show}
+                </button>
+              </>
+            )
+          )}
         </div>
       </div>
     )
@@ -658,7 +801,9 @@ export function Chronicle() {
       </>
     )
   }
-  const events = [...eventsIn(raw, view.value)].sort((a, b) => a.year - b.year || a.name.localeCompare(b.name, 'de'))
+  const shown = eventsIn(raw, view.value)
+  const heldEvents = heldWords() && showHeld.value ? eventsIn(raw, view.value, Math.max(1, chainOf(t, strand.value).length - 1)).filter(e => !shown.includes(e)) : []
+  const events = [...shown, ...heldEvents].sort((a, b) => a.year - b.year || a.name.localeCompare(b.name, 'de'))
   const addEvent = () => {
     const event = newEvent(raw, y, editStrand())
     patchSource({ events: [...raw.events, event] })
@@ -684,7 +829,7 @@ export function Chronicle() {
               const open = selectedEvent.value === e.id
               const type = raw.catalog.eventTypes.find(k => k.id === e.type)
               return (
-                <li key={e.id} class={`${open ? 'on' : ''}${e.year > y ? ' future' : ''}`}>
+                <li key={e.id} class={`${open ? 'on' : ''}${e.year > y ? ' future' : ''}${heldEvents.includes(e) ? ' held' : ''}`}>
                   <button
                     class="event-row"
                     onClick={() => {

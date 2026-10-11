@@ -866,3 +866,99 @@ export function compareViews(project: Project, year: number, a: View, b: View): 
   }
   return out
 }
+
+// ---------------------------------------------------------------------------------------------
+// releasing: what a derived strand takes over from its parent
+
+/** lets an entry show in the strand: released there, or no longer hidden */
+export function showEntry<T extends Owned>(t: Timeline, entry: T, strand: string, from?: string): T {
+  const s = t.strands.find(x => x.id === strand)
+  if (s?.inherit === 'released') return setVisibility(entry, strand, from ? { show: true, from } : { show: true })
+  return setVisibility(entry, strand, null)
+}
+
+/** keeps an entry back in the strand: no longer released there, or hidden */
+export function holdEntry<T extends Owned>(t: Timeline, entry: T, strand: string): T {
+  const s = t.strands.find(x => x.id === strand)
+  if (s?.inherit === 'released') return setVisibility(entry, strand, null)
+  return setVisibility(entry, strand, { show: false })
+}
+
+export interface HeldEntry {
+  type: 'element' | 'change' | 'relation' | 'event'
+  kind?: EntityKind
+  /** the element's or event's id */
+  id: string
+  change?: Change
+}
+
+/** what the strand shown holds back of its parent's world in a year (base years) */
+export function heldIn(project: Project, view: View, year: number): HeldEntry[] {
+  const t = project.timeline
+  if (!t) return []
+  const c = contextOf(t, view)
+  const parent = c.chain.length - 1
+  if (parent < 1) return []
+  const out: HeldEntry[] = []
+  for (const [kind, key] of Object.entries(COLLECTIONS) as [EntityKind, CollectionKey][]) {
+    for (const e of project[key] as unknown as Item[]) {
+      if (!seen(e, c, parent)) continue
+      if (!seen(e, c) && lifeIn(e, c, parent).begin === year) out.push({ type: 'element', kind, id: e.id })
+      for (const ch of e.history ?? []) if (ch.year === year && seen(ch, c, parent) && !seen(ch, c)) out.push({ type: 'change', kind, id: e.id, change: ch })
+    }
+  }
+  for (const ch of project.diplomacyHistory ?? []) if (ch.year === year && seen(ch, c, parent) && !seen(ch, c)) out.push({ type: 'relation', id: '', change: ch })
+  for (const e of project.events ?? []) if (e.year === year && seen(e, c, parent) && !seen(e, c)) out.push({ type: 'event', id: e.id })
+  return out
+}
+
+/**
+ * The project with some entries of the parent's world shown in the strand: `element` decides per
+ * element, `change` per change (of an element, or of the relations: then without element), `event`
+ * per event. Only what the parent shows and the strand holds back is touched.
+ */
+function release(
+  project: Project,
+  view: View,
+  pick: { element?: (e: Item, life: { begin: number | null; end: number | null }) => boolean; change?: (ch: Change, e: Item | null) => boolean; event?: (e: WorldEvent) => boolean },
+  from?: string,
+): Project {
+  const t = project.timeline
+  if (!t) return project
+  const c = contextOf(t, view)
+  const parent = c.chain.length - 1
+  if (parent < 1) return project
+  const strand = c.chain[parent]
+  const held = (entry: Owned) => seen(entry, c, parent) && !seen(entry, c)
+  const out = { ...project } as Record<string, unknown>
+  for (const key of COLLECTION_KEYS) {
+    const items = project[key] as unknown as Item[]
+    let touched = false
+    const next = items.map(e => {
+      if (!seen(e, c, parent)) return e
+      let x = e
+      if (held(e) && pick.element?.(e, lifeIn(e, c, parent))) x = showEntry(t, x, strand, from)
+      if (pick.change && x.history?.some(ch => held(ch) && pick.change!(ch, e))) x = { ...x, history: x.history!.map(ch => (held(ch) && pick.change!(ch, e) ? showEntry(t, ch, strand, from) : ch)) }
+      if (x !== e) touched = true
+      return x
+    })
+    if (touched) out[key] = next
+  }
+  if (pick.change && (project.diplomacyHistory ?? []).some(ch => held(ch) && pick.change!(ch, null))) {
+    out.diplomacyHistory = project.diplomacyHistory.map(ch => (held(ch) && pick.change!(ch, null) ? showEntry(t, ch, strand, from) : ch))
+  }
+  if (pick.event && project.events.some(e => held(e) && pick.event!(e))) out.events = project.events.map(e => (held(e) && pick.event!(e) ? showEntry(t, e, strand, from) : e))
+  return out as unknown as Project
+}
+
+/** releases an element in the strand shown; with `upTo` also its changes up to that year */
+export const releaseElement = (project: Project, view: View, id: string, upTo: number | null, from?: string) =>
+  release(project, view, { element: e => e.id === id, change: (ch, e) => upTo != null && e?.id === id && ch.year <= upTo }, from)
+
+/** releases an event with every change that names it */
+export const releaseEvent = (project: Project, view: View, id: string, from?: string) =>
+  release(project, view, { event: e => e.id === id, change: ch => ch.event === id }, from)
+
+/** releases everything the strand holds back in a year: elements beginning, changes, relations, events */
+export const releaseYear = (project: Project, view: View, year: number, from?: string) =>
+  release(project, view, { element: (_, life) => life.begin === year, change: ch => ch.year === year, event: e => e.year === year }, from)

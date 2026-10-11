@@ -205,6 +205,20 @@ function riverWidth(river: River, s: LayerStyle) {
 }
 
 const cache = new WeakMap<object, { key: string; styles: Style[] }>()
+const GHOST = '#c3cad4'
+
+/** something the strand shown holds back of its parent: an outline and its name, dashed and faint */
+function ghostStyles(kind: EntityKind, entity: Entity, selected: boolean): Style[] {
+  const stroke = new Stroke({ color: selected ? SELECT_COLOR : rgba(GHOST, 0.85), width: selected ? 2.5 : 1.4, lineDash: [5, 4] })
+  const label = (extra: Partial<ConstructorParameters<typeof Text>[0]> = {}) =>
+    entity.name ? new Text({ text: entity.name, font: 'italic 12px "Segoe UI", sans-serif', fill: new Fill({ color: rgba(GHOST, 0.95) }), stroke: new Stroke({ color: '#18191bcc', width: 3 }), overflow: true, ...extra }) : undefined
+  const geometry = entity.geometry?.type
+  if (geometry === 'Point') return [new Style({ image: new Circle({ radius: 5, fill: new Fill({ color: rgba(GHOST, 0.15) }), stroke }), text: label({ offsetY: kind === 'label' ? 0 : 14 }) })]
+  if (geometry === 'LineString') return [new Style({ stroke, text: label({ placement: 'line' }) })]
+  const text = label()
+  return [new Style({ stroke, fill: new Fill({ color: rgba(GHOST, 0.06) }) }), ...(text ? [new Style({ geometry: areaLabelPoint, text })] : [])]
+}
+const ghostCache = new WeakMap<object, { selected: boolean; styles: Style[] }>()
 
 /** the style function for one element layer */
 export function entityStyle(kind: EntityKind, getContext: () => StyleContext, styleVersion: () => number) {
@@ -213,6 +227,13 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
     if (!entity) return undefined
     const ctx = getContext()
     const selected = ctx.selectedId === entity.id
+    if (feature.get('ghost')) {
+      const hit = ghostCache.get(entity)
+      if (hit && hit.selected === selected) return hit.styles
+      const styles = ghostStyles(kind, entity, selected)
+      ghostCache.set(entity, { selected, styles })
+      return styles
+    }
     // each element layer is named like its list
     const s = ctx.project.style[COLLECTION[kind]]
     // world view hides small places and their names

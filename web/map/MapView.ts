@@ -31,6 +31,7 @@ import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMo
 import { shiftKeyOnly, singleClick } from 'ol/events/condition'
 import type MapBrowserEvent from 'ol/MapBrowserEvent'
 import { shownGeometry } from '../model/terrain'
+import { GHOSTS } from '../model/timeline'
 import type { KoppenMeta, SatelliteMeta, TerrainMeta } from '../platform'
 import { platform } from '../platform'
 import { entityStyle, hexToRgb, SELECT_COLOR, type StyleContext } from './styles'
@@ -382,7 +383,10 @@ export class MapView {
   }
 
   private syncKind(kind: EntityKind, project: Project, geometryOnly = false) {
-    const entities = project[COLLECTIONS[kind]] as unknown as Entity[]
+    // what the strand shown holds back of its parent comes along, faintly
+    const held = ((project as unknown as Record<string, Partial<Record<string, Entity[]>> | undefined>)[GHOSTS]?.[COLLECTIONS[kind]] ?? []) as Entity[]
+    const heldIds = new Set(held.map(e => e.id))
+    const entities = held.length ? [...(project[COLLECTIONS[kind]] as unknown as Entity[]), ...held] : (project[COLLECTIONS[kind]] as unknown as Entity[])
     const known = this.features[kind]
     const source = this.sources[kind]
     const seen = new Set<string>()
@@ -401,6 +405,11 @@ export class MapView {
       if (feature.get('geometrySource') !== geometrySource) {
         feature.setGeometry(geometrySource ? toOl(geometrySource) : undefined)
         feature.set('geometrySource', geometrySource, true)
+      }
+      const ghost = heldIds.has(entity.id)
+      if (feature.get('ghost') !== ghost) {
+        feature.set('ghost', ghost, true)
+        feature.changed()
       }
       if (feature.get('entity') !== entity) {
         feature.set('entity', entity, true)
@@ -551,7 +560,9 @@ export class MapView {
     }
 
     const s = this.selection
-    if (tool.id === 'select' && s) {
+    // something held back is only looked at, not edited
+    const editable = !!s && !this.features[s.kind].get(s.id)?.get('ghost')
+    if (tool.id === 'select' && s && editable) {
       const feature = this.features[s.kind].get(s.id)
       const geometry = feature?.getGeometry()
       if (feature && geometry instanceof Point) {
@@ -565,7 +576,7 @@ export class MapView {
         if (s.kind === 'route') snapForRoutes(s.id)
       }
     }
-    if (tool.id === 'vertices' && s) {
+    if (tool.id === 'vertices' && s && editable) {
       const feature = this.editSource.getFeatures()[0] ?? this.features[s.kind].get(s.id)
       if (feature) {
         const modify = new Modify({ features: new Collection([feature]), deleteCondition })

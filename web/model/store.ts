@@ -6,7 +6,7 @@
 // into `source` as changes in that year (see timeline.ts). Without a timeline both are the same.
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
-import { baseStrand, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type View } from './timeline'
+import { baseStrand, GHOSTS, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type Ghosts, type View } from './timeline'
 import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
 
 export const source = signal<Project>(newProject())
@@ -248,8 +248,20 @@ export function resetProject(next: Project, path: string | null) {
 
 function fixSelection() {
   const s = selection.peek()
-  if (s && !findEntity(s.kind, s.id)) selection.value = null
+  if (s && !findEntity(s.kind, s.id) && !findHeld(s.kind, s.id)) selection.value = null
 }
+
+/** an element the strand shown holds back of its parent (shown faintly when asked for) */
+export function findHeld<K extends EntityKind>(kind: K, id: string, p: Project = project.value): EntityMap[K] | undefined {
+  const held = (p as unknown as Record<string, Ghosts | undefined>)[GHOSTS]
+  return (held?.[COLLECTION[kind]] as unknown as EntityMap[K][] | undefined)?.find(e => e.id === id)
+}
+
+/** is the selection an element held back (not part of the world shown)? */
+export const selectionHeld = computed(() => {
+  const s = selection.value
+  return !!s && !findEntity(s.kind, s.id) && !!findHeld(s.kind, s.id)
+})
 // an element that does not show in the year and strand now shown is no longer selected
 project.subscribe(() => fixSelection())
 
@@ -263,7 +275,7 @@ export function findEntity<K extends EntityKind>(kind: K, id: string, p: Project
 
 export const selectedEntity = computed<Entity | null>(() => {
   const s = selection.value
-  return s ? (findEntity(s.kind, s.id, project.value) ?? null) : null
+  return s ? (findEntity(s.kind, s.id, project.value) ?? findHeld(s.kind, s.id, project.value) ?? null) : null
 })
 
 function withList<K extends EntityKind>(p: Project, kind: K, items: EntityMap[K][]): Project {

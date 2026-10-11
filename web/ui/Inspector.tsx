@@ -6,7 +6,7 @@ import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { editStrand, notify, project, removeEntity, selectedEntity, selection, snapCities, storedEntity, tool, updateEntity, year } from '../model/store'
+import { editStrand, notify, project, removeEntity, selectedEntity, selection, selectionHeld, snapCities, storedEntity, tool, updateEntity, year } from '../model/store'
 import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
 import type { AreaBase, City, Culture, Entity, EntityKind, Institution, Label, LonLat, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
@@ -17,7 +17,7 @@ import { openStateDialog } from './StateDialogs'
 import { NoteLink, NotePicker } from './NoteLink'
 import { obsidianUrl } from '../model/obsidian'
 import { Check, Color, Field, Num, Section, Select, Text } from './components'
-import { EditYear, TimeSection } from './Timeline'
+import { EditYear, HeldInspector, TimeSection } from './Timeline'
 
 function useUpdate<K extends EntityKind>(kind: K, id: string) {
   return (patch: Partial<Entity>, merge?: string) => updateEntity(kind, id, patch as never, merge)
@@ -668,6 +668,8 @@ export function Inspector() {
   const entity = selectedEntity.value
   const s = selection.value
   if (!entity || !s) return null
+  // held back in the strand shown: only looked at, and taken over
+  if (selectionHeld.value) return <HeldInspector kind={s.kind} entity={entity} />
   const kind = s.kind
   const up = (patch: Partial<Entity>, merge?: string) => updateEntity(kind, entity.id, patch as never, merge)
   const hasColor = 'color' in entity && isArea(kind)

@@ -524,3 +524,10 @@ select.strand-action { width: 52px; flex: none; padding: 1px 4px; font-size: 12p
 .strand-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .strand-name { font-family: "Marcellus", serif; font-size: 14px; text-decoration: none; color: var(--text); }
 .strand-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; margin: 4px 0 6px; display: flex; flex-direction: column; gap: 6px; }
+.inspector.held .held-name { font-family: "Marcellus", serif; font-weight: normal; font-size: 18px; margin: 4px 0; }
+.change-list li.held { border-style: dotted; opacity: 0.8; }
+.change-list .hold { align-self: flex-start; }
+.held-report { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; padding: 4px 6px; border: 1px dashed var(--line); border-radius: var(--radius); }
+.held-report .year-report { flex-basis: 100%; }
+.year-report li.held { border-left-style: dashed; opacity: 0.8; }
+.event-list li.held .event-row { opacity: 0.55; font-style: italic; }

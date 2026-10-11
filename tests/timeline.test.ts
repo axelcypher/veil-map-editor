@@ -270,3 +270,37 @@ test('strands: moving and copying entries', () => {
   const into = changeToStrand(t, element, { year: 6, strand: 'leser' }, 'para', false)
   assert.equal(into.history.length, 2)
 })
+
+test('strands: releasing', async () => {
+  const { heldIn, releaseElement, releaseEvent, releaseYear, holdEntry, showEntry } = await import('../web/model/timeline.ts')
+  let raw: any = {
+    ...empty,
+    timeline: strands(),
+    states: [state('A', { history: [{ year: -28000, set: { name: 'A2' }, event: 'ev' }, { year: -27000, set: { name: 'A3' } }] }), state('B', { begin: -26000 })],
+    diplomacyHistory: [{ year: -26000, set: { 'A>B': 'war' } }],
+    events: [{ id: 'ev', name: 'Krieg', year: -28000, until: null, type: '', description: '', note: '', refs: [] }],
+  }
+  // the reader's strand holds everything back
+  assert.deepEqual(heldIn(raw, L, -26000).map(h => h.type).sort(), ['element', 'relation'])
+  // an element with its history up to a year
+  raw = releaseElement(raw, L, 'A', -27500)
+  let w = resolveWorld(raw, -26500, L)
+  assert.equal(w.states[0].name, 'A2')
+  // the event with its changes
+  raw = releaseEvent(raw, L, 'ev')
+  assert.equal(resolveWorld(raw, -28000, L).events.length, 1)
+  // a whole year
+  raw = releaseYear(raw, L, -26000)
+  w = resolveWorld(raw, -26000, L)
+  assert.deepEqual(ids(w.states), ['A', 'B'])
+  assert.equal(w.diplomacy['A>B'], 'war')
+  assert.equal(w.states[0].name, 'A2')
+  assert.equal(heldIn(raw, L, -26000).length, 0)
+  // the parallel strand sees what the reader's sees; holding back there hides
+  assert.deepEqual(ids(resolveWorld(raw, -26000, P).states), ['A', 'B'])
+  const t = raw.timeline
+  const hidden = holdEntry(t, raw.states[1], 'para')
+  assert.deepEqual(hidden.visibility.para, { show: false })
+  assert.equal(showEntry(t, hidden, 'para').visibility?.para, undefined)
+  assert.equal(holdEntry(t, raw.states[1], 'leser').visibility?.leser, undefined)
+})
