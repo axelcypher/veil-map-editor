@@ -5,12 +5,12 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
 import { KIND_NAMES, newEvent, newId, newStrand, newTimeline } from '../model/project'
 import {
-  addStored, commitSource, editStrand, milestone, patchSource, project, reckoning, selection, setMilestone, setStrand, setYear, showHeld, source, storedEntity, strand, updateEntity,
+  addStored, commitSource, compareWith, differences, editStrand, milestone, patchSource, project, reckoning, selection, setMilestone, setStrand, setYear, showHeld, source, storedEntity, strand, updateEntity,
   updateStored, view, year,
 } from '../model/store'
 import {
   baseStrand, chainOf, changesOf, changeToStrand, changeYears, copyElement, editChange, elementToStrand, entityYears, eventsIn, eventToStrand, flattenAt, happeningsIn,
-  heldIn, holdEntry, lifeOf, moveChange, reckoningOf, releaseElement, releaseEvent, releaseYear, removeEventFromProject, removeStrandFromProject, setVisibility, showEntry, storedStrand,
+  heldIn, holdEntry, lifeOf, moveChange, reckoningOf, releaseElement, releaseEvent, releaseYear, removeEventFromProject, removeStrandFromProject, resolveWorld, setVisibility, showEntry, storedStrand,
   toBaseYear, toOwnYear, visibleIn, type Reckoning,
 } from '../model/timeline'
 import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Milestone, type Owned, type Project, type Strand, type Timeline, type Visibility, type WorldEvent } from '../model/types'
@@ -280,6 +280,26 @@ export function TimelineBar() {
             </option>
           ))}
           <option value="*">alles</option>
+        </select>
+      )}
+      {t.strands.length > 1 && (
+        <select
+          class={`tl-compare${compareWith.value ? ' on' : ''}`}
+          value={compareWith.value ?? ''}
+          onChange={e => {
+            compareWith.value = (e.target as HTMLSelectElement).value || null
+            if (compareWith.value) chronicleRequest.value++
+          }}
+          title="Mit einem anderen Strang vergleichen: die Karte markiert, was im gezeigten Jahr anders ist; die Chronik listet es"
+        >
+          <option value="">Vergleich: aus</option>
+          {strandTree(t)
+            .filter(x => x.strand.id !== strand.value)
+            .map(({ strand: s }) => (
+              <option key={s.id} value={s.id}>
+                mit {s.name}
+              </option>
+            ))}
         </select>
       )}
       {current?.parent && (
@@ -855,6 +875,48 @@ function EventEditor({ event }: { event: WorldEvent }) {
   )
 }
 
+/** what differs between the strand shown and the one compared with, in the year shown */
+function Comparison() {
+  const t = source.value.timeline
+  const other = compareWith.value
+  const list = differences.value
+  if (!t || !other) return null
+  const here = project.value
+  const there = resolveWorld(source.value, year.value, { strand: other, milestone: milestone.value })
+  const name = (kind: EntityKind, id: string) => {
+    const find = (p: Project) => (p[COLLECTION[kind]] as unknown as Base[]).find(e => e.id === id)
+    return `${find(here)?.name ?? find(there)?.name ?? id} (${KIND_NAMES[kind][0]})`
+  }
+  const valueIn = (p: Project, kind: EntityKind, id: string, field: string) => {
+    const e = (p[COLLECTION[kind]] as unknown as Record<string, unknown>[]).find(x => x.id === id)
+    return e ? describeChange({ [field]: e[field] }, p) : ''
+  }
+  return (
+    <Section title={`Vergleich mit „${strandName(t, other)}“`}>
+      {!list.length ? (
+        <p class="empty">Im gezeigten Jahr gleich.</p>
+      ) : (
+        <ul class="year-report comparison">
+          {list.map(d => (
+            <li key={`${d.kind}:${d.id}`} class={`diff-${d.what}`} onClick={() => d.what !== 'b' && pick(d.kind, d.id)}>
+              <span class="what">{d.what === 'a' ? 'nur hier' : d.what === 'b' ? 'nur dort' : 'anders'}</span> {name(d.kind, d.id)}
+              {d.what === 'changed' && (
+                <span class="muted">
+                  {' · '}
+                  {d.fields
+                    .map(f => (f === 'geometry' ? 'Gebiet bzw. Lage' : `${valueIn(here, d.kind, d.id, f)} ↔ ${valueIn(there, d.kind, d.id, f).replace(/^[^→]*→ /, '')}`))
+                    .join(' · ')}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p class="hint">Rosa: nur im gezeigten Strang · Türkis: nur im verglichenen (gestrichelt sein Umriss) · Gelb: in beiden, aber anders.</p>
+    </Section>
+  )
+}
+
 export function Chronicle() {
   const raw = source.value
   const t = raw.timeline
@@ -890,6 +952,7 @@ export function Chronicle() {
         </button>
         {t.strands.length > 1 && <span class="muted">in „{strandName(t, strand.value)}“</span>}
       </div>
+      {compareWith.value && <Comparison />}
       <Section title={`Im Jahr ${formatYear(y, r)}`}>
         <YearReport y={y} />
       </Section>

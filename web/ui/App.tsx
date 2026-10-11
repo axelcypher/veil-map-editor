@@ -7,7 +7,7 @@ import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
 import { CLOUD_RECENT, confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
-import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setYear, source, tool, undo, view, year, type Tool } from '../model/store'
+import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setYear, source, tool, undo, view as shownView, year, differences, compareWorld, type Tool } from '../model/store'
 import { changeYears } from '../model/timeline'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
@@ -348,6 +348,7 @@ function useMap(container: { current: HTMLDivElement | null }) {
         void clipVersion.value
         view.refreshAreas()
       }),
+      effect(() => view.setDifferences(differences.value, project.value, compareWorld.value)),
     ]
     return () => stops.forEach(stop => stop())
   }, [])
@@ -393,7 +394,7 @@ function useShortcuts() {
       // the timeline: to the previous or next year in which something changes
       if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && year.value != null) {
         event.preventDefault()
-        const years = changeYears(source.value, view.value)
+        const years = changeYears(source.value, shownView.value)
         const y = year.value
         const next = event.key === 'ArrowRight' ? years.find(x => x > y) : [...years].reverse().find(x => x < y)
         if (next != null) setYear(next)

@@ -120,6 +120,7 @@ export class MapView {
   private readonly editSource = new VectorSource()
   private readonly measureSource = new VectorSource()
   private readonly coastSource = new VectorSource()
+  private readonly compareSource = new VectorSource()
   private interactions: Interaction[] = []
   /** the drawing in progress, for the touch buttons */
   private activeDraw: Draw | null = null
@@ -196,6 +197,22 @@ export class MapView {
         image: new CircleStyle({ radius: 4, fill: new Fill({ color: '#d7263d' }) }),
       }),
     })
+    // differences to another strand: here only, there only (its outline), changed
+    const compare = new VectorLayer({
+      source: this.compareSource,
+      zIndex: 880,
+      style: feature => {
+        const what = feature.get('what') as 'a' | 'b' | 'changed'
+        const color = what === 'a' ? '#e06c9f' : what === 'b' ? '#4bc0d9' : '#f2b134'
+        const dash = feature.get('other') ? [7, 5] : undefined
+        return new Style({
+          stroke: new Stroke({ color, width: feature.get('other') ? 2 : 3.5, lineDash: dash }),
+          fill: what === 'b' ? new Fill({ color: 'rgba(75,192,217,0.08)' }) : undefined,
+          image: new CircleStyle({ radius: 9, stroke: new Stroke({ color, width: 2.5, lineDash: dash }) }),
+        })
+      },
+    })
+    this.map.addLayer(compare)
     this.map.addLayer(edit)
     this.map.addLayer(measure)
     snapCities.subscribe(on => {
@@ -488,6 +505,36 @@ export class MapView {
     const rules = [`.ol-layers { filter: ${filterCss(display.mapFilter)}; background: ${display.background}; }`, `.layer-texture { mix-blend-mode: ${display.texture.blend}; }`, `.layer-shade { mix-blend-mode: multiply; }`]
     for (const [id, filter] of Object.entries(display.layerFilters)) rules.push(`.${layerClass(id as LayerId)} { filter: ${filterCss(filter)}; }`)
     this.styleSheet.textContent = rules.join('\n')
+  }
+
+  /**
+   * Marks how the world shown differs from another strand's: elements only here and changed ones
+   * by their shape here, elements only there (and the other shape of changed ones) by their shape there.
+   */
+  setDifferences(differences: { kind: EntityKind; id: string; what: 'a' | 'b' | 'changed'; fields: string[] }[], here: Project, there: Project | null) {
+    this.compareSource.clear()
+    if (!differences.length || !there) return
+    const find = (p: Project, kind: EntityKind, id: string) => (p[COLLECTIONS[kind]] as unknown as Entity[]).find(e => e.id === id)
+    const features: Feature[] = []
+    const add = (entity: Entity | undefined, what: string, other: boolean) => {
+      if (!entity?.geometry) return
+      // areas as shown: cut to the land where they want that
+      const geometry = entity.geometry.type === 'MultiPolygon' ? shownGeometry(entity.geometry, (entity as { clip?: boolean }).clip ?? false) : entity.geometry
+      if (!geometry) return
+      const feature = new Feature(toOl(geometry))
+      feature.set('what', what)
+      feature.set('other', other)
+      features.push(feature)
+    }
+    for (const d of differences) {
+      if (d.what === 'a') add(find(here, d.kind, d.id), 'a', false)
+      else if (d.what === 'b') add(find(there, d.kind, d.id), 'b', true)
+      else {
+        add(find(here, d.kind, d.id), 'changed', false)
+        if (d.fields.includes('geometry')) add(find(there, d.kind, d.id), 'changed', true)
+      }
+    }
+    this.compareSource.addFeatures(features)
   }
 
   // ------------------------------------------------------------------------------------------

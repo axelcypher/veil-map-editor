@@ -538,3 +538,8 @@ select.strand-action { width: 52px; flex: none; padding: 1px 4px; font-size: 12p
 .milestone-list li { display: flex; gap: 4px; align-items: center; }
 .milestone-list input[type="text"] { flex: 1; min-width: 0; }
 .milestone-list .milestone-description { flex: 2; }
+.tl-compare { width: auto; max-width: 170px; font-size: 12px; padding: 1px 6px; flex: none; }
+.tl-compare.on { border-color: #f2b134; }
+.comparison li.diff-a { border-left-color: #e06c9f; }
+.comparison li.diff-b { border-left-color: #4bc0d9; cursor: default; }
+.comparison li.diff-changed { border-left-color: #f2b134; }

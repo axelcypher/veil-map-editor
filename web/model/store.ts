@@ -6,7 +6,7 @@
 // into `source` as changes in that year (see timeline.ts). Without a timeline both are the same.
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
-import { baseStrand, GHOSTS, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type Ghosts, type View } from './timeline'
+import { baseStrand, compareViews, GHOSTS, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type Difference, type Ghosts, type View } from './timeline'
 import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
 
 export const source = signal<Project>(newProject())
@@ -27,6 +27,23 @@ function validStrand(p: Project, wanted: string | undefined) {
 }
 
 export const view = computed<View>(() => ({ strand: strand.value, milestone: milestone.value }))
+/** another strand to compare the one shown with, in the same year and milestone; null: none */
+export const compareWith = signal<string | null>(null)
+/** what differs between the strand shown and the one compared with */
+export const differences = computed<Difference[]>(() => {
+  const other = compareWith.value
+  const p = source.value
+  const y = year.value
+  if (!other || !p.timeline || y == null || other === strand.value || !p.timeline.strands.some(s => s.id === other)) return []
+  return compareViews(p, y, view.value, { strand: other, milestone: milestone.value })
+})
+/** the world of the strand compared with, in the year shown */
+export const compareWorld = computed<Project | null>(() => {
+  const other = compareWith.value
+  const p = source.value
+  if (!other || !p.timeline || year.value == null) return null
+  return resolveWorld(p, year.value, { strand: other, milestone: milestone.value })
+})
 export const project = computed<Project>(() => resolveWorld(source.value, year.value, view.value, showHeld.value))
 /** how the strand shown counts its years */
 export const reckoning = computed(() => {
@@ -84,6 +101,7 @@ function settleView(p: Project) {
   if (s !== strand.peek()) strand.value = s
   year.value = clampYear(p, year.peek(), s)
   if (!p.timeline) milestone.value = undefined
+  if (compareWith.peek() && !p.timeline?.strands.some(x => x.id === compareWith.peek())) compareWith.value = null
 }
 export const filePath = signal<string | null>(null)
 export const dirty = signal(false)
