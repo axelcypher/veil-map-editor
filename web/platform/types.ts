@@ -164,6 +164,8 @@ export interface Platform {
 
   vaultList(root: string): Promise<VaultNote[]>
   vaultRead(root: string, path: string): Promise<string>
+  /** writes a note inside the vault (folders are made as needed); nothing outside it */
+  vaultWrite(root: string, path: string, text: string): Promise<void>
 
   onProgress(handler: (progress: Progress) => void): () => void
 

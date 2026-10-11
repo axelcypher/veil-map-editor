@@ -24,6 +24,7 @@ import { Tooltip } from './Tooltip'
 import { appDialog } from './dialogs'
 import { SyncBadge, SyncDialog } from './SyncDialog'
 import { openRemote, remoteNames, startSync } from '../model/sync'
+import { startOverview } from '../model/overview'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { chronicleRequest, TimelineBar } from './Timeline'
@@ -449,7 +450,7 @@ export function App() {
   usePicks()
   useShortcuts()
   useEffect(() => {
-    refreshVault(project.value)
+    refreshVault()
     checkAtStartup()
     // the copy of a crashed session is offered before anything new can replace it
     let stopRecovery: (() => void) | null = null
@@ -458,6 +459,7 @@ export function App() {
       if (!unmounted) stopRecovery = startRecovery()
     })
     const stopSync = startSync()
+    const stopOverview = startOverview()
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.value) event.preventDefault()
     }
@@ -466,6 +468,7 @@ export function App() {
       unmounted = true
       stopRecovery?.()
       stopSync()
+      stopOverview()
       window.removeEventListener('beforeunload', warn)
     }
   }, [])

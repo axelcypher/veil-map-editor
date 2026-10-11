@@ -124,5 +124,14 @@ export const webPlatform: Platform = {
     if (!response.ok) throw new Error(`Note nicht lesbar: ${path}`)
     return response.text()
   },
+  async vaultWrite(root, path, text) {
+    const api = restApi(root)
+    const response = await fetch(`${api.base}/vault/${path.split('/').map(encodeURIComponent).join('/')}`, {
+      method: 'PUT',
+      headers: { ...api.headers, 'Content-Type': 'text/markdown' },
+      body: text,
+    })
+    if (!response.ok) throw new Error(`Note nicht schreibbar: ${path}`)
+  },
   onProgress: () => () => {},
 }

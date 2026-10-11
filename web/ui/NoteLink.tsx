@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks'
 import { formatValue, obsidianUrl, readFrontmatter, refreshVault, vaultError, vaultNotes } from '../model/obsidian'
-import { notify, project } from '../model/store'
+import { notify } from '../model/store'
+import { vaultSettings } from '../model/vault'
 import { platform } from '../platform'
 import { Modal } from './components'
 
@@ -8,7 +9,7 @@ import { Modal } from './components'
 export function NotePicker({ onPick, onClose, suggestion }: { onPick: (path: string) => void; onClose: () => void; suggestion?: string }) {
   const [query, setQuery] = useState(suggestion ?? '')
   useEffect(() => {
-    if (!vaultNotes.value) refreshVault(project.value)
+    if (!vaultNotes.value) refreshVault()
   }, [])
   const matches = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean)
@@ -16,7 +17,7 @@ export function NotePicker({ onPick, onClose, suggestion }: { onPick: (path: str
   }, [query, vaultNotes.value])
   return (
     <Modal title="Note verknüpfen" onClose={onClose}>
-      {!project.value.obsidian.vaultPath ? (
+      {!vaultSettings.value.path ? (
         <p>Erst unter „Projekt → Obsidian“ den Vault-Ordner freigeben.</p>
       ) : vaultError.value ? (
         <p class="error-text">{vaultError.value}</p>
@@ -45,18 +46,18 @@ export function NotePicker({ onPick, onClose, suggestion }: { onPick: (path: str
 export function NoteLink({ note, name, onChange }: { note: string; name: string; onChange: (path: string) => void }) {
   const [picking, setPicking] = useState(false)
   const [data, setData] = useState<Record<string, unknown> | null | 'error'>(null)
-  const p = project.value
+  const root = vaultSettings.value.path
   useEffect(() => {
     setData(null)
-    if (!note || !p.obsidian.vaultPath) return
+    if (!note || !root) return
     let live = true
-    readFrontmatter(p, note)
+    readFrontmatter(note)
       .then(result => live && setData(result))
       .catch(() => live && setData('error'))
     return () => {
       live = false
     }
-  }, [note, p.obsidian.vaultPath])
+  }, [note, root])
   return (
     <div class="note-link">
       {note ? (
@@ -65,7 +66,7 @@ export function NoteLink({ note, name, onChange }: { note: string; name: string;
             📝 {note.replace(/\.md$/i, '').split('/').pop()}
           </div>
           <div class="button-row">
-            <button onClick={() => platform.openExternal(obsidianUrl(p, note)).catch(e => notify(String(e), 'error'))}>In Obsidian öffnen</button>
+            <button onClick={() => platform.openExternal(obsidianUrl(note)).catch(e => notify(String(e), 'error'))}>In Obsidian öffnen</button>
             <button onClick={() => setPicking(true)}>Ändern</button>
             <button onClick={() => onChange('')}>Lösen</button>
           </div>
@@ -82,7 +83,7 @@ export function NoteLink({ note, name, onChange }: { note: string; name: string;
               </tbody>
             </table>
           )}
-          {data === null && p.obsidian.vaultPath && <p class="muted">Kein Frontmatter.</p>}
+          {data === null && root && <p class="muted">Kein Frontmatter.</p>}
         </>
       ) : (
         <button onClick={() => setPicking(true)}>Note verknüpfen …</button>

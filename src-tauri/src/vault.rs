@@ -2,7 +2,7 @@
 // the folder the user released.
 use serde::Serialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Serialize)]
 pub struct VaultNote {
@@ -58,4 +58,28 @@ pub fn resolve(root: &str, relative: &str) -> Result<PathBuf, String> {
 
 pub fn read(root: &str, relative: &str) -> Result<String, String> {
     fs::read_to_string(resolve(root, relative)?).map_err(|e| e.to_string())
+}
+
+/// writes a Markdown note the editor makes; the path may only name folders below the vault, and the
+/// file is written next to it first and then renamed, so a sync tool never sees half a note
+pub fn write(root: &str, relative: &str, text: &str) -> Result<(), String> {
+    let root = fs::canonicalize(root).map_err(|_| "Der Vault-Ordner existiert nicht.".to_string())?;
+    let relative = Path::new(relative);
+    let plain = relative.components().all(|c| matches!(c, Component::Normal(_)));
+    let markdown = relative.extension().is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    if !plain || !markdown {
+        return Err("Nur eine .md-Note innerhalb des Vaults kann geschrieben werden.".into());
+    }
+    let target = root.join(relative);
+    let folder = target.parent().ok_or("Ungültiger Pfad.")?;
+    fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+    if !fs::canonicalize(folder).map_err(|e| e.to_string())?.starts_with(&root) {
+        return Err("Der Pfad liegt außerhalb des Vaults.".into());
+    }
+    let temp = folder.join(format!(".{}.tmp", target.file_name().unwrap_or_default().to_string_lossy()));
+    fs::write(&temp, text).map_err(|e| e.to_string())?;
+    fs::rename(&temp, &target).map_err(|e| {
+        let _ = fs::remove_file(&temp);
+        e.to_string()
+    })
 }

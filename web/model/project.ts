@@ -1,6 +1,7 @@
 // Creating, reading and writing projects, and new elements with sensible defaults.
 import { defaultCatalog, defaultDisplay, defaultKoppenClasses, defaultLayers, defaultStyle } from './catalog'
 import { migrateTimeline } from './timeline'
+import { adoptLegacyVault } from './vault'
 import type { City, Culture, EntityKind, EntityMap, Institution, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Strand, Timeline, WorldEvent, Zone } from './types'
 
 export const PLANET_RADIUS = 6_606_727
@@ -43,7 +44,6 @@ export function newProject(): Project {
     layerPresets: [],
     stylePresets: [],
     display: defaultDisplay(),
-    obsidian: { vaultPath: '', vaultName: '' },
     archive: defaultArchiveOptions(),
     globe: defaultGlobe(),
     view: { center: [0, 0], zoom: 1 },
@@ -229,8 +229,10 @@ export const newEvent = (p: Project, year: number, strand?: string): WorldEvent 
 
 /** fills in everything a file from an older or hand-edited version lacks */
 export function parseProject(text: string): Project {
-  const data = JSON.parse(text) as Partial<Project> & { format?: string }
+  const { obsidian, ...data } = JSON.parse(text) as Partial<Project> & { format?: string; obsidian?: { vaultPath?: string; vaultName?: string } }
   if (data.format !== 'veil-project') throw new Error('Keine VEIL-Projektdatei.')
+  // the vault belongs to the device now (vault.ts)
+  adoptLegacyVault(obsidian)
   const fresh = newProject()
   const merged = { ...fresh, ...data } as Project
   merged.catalog = { ...fresh.catalog, ...data.catalog }

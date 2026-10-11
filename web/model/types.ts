@@ -533,7 +533,6 @@ export interface Project {
   layerPresets: LayerPreset[]
   stylePresets: StylePreset[]
   display: Display
-  obsidian: { vaultPath: string; vaultName: string }
   archive: ArchiveOptions
   globe: GlobeOptions
   /** per device: where the map looks, which strand, year (base years) and milestone it shows */

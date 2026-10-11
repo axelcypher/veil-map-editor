@@ -124,6 +124,7 @@ export const tauriPlatform: Platform = {
 
   vaultList: root => invoke('vault_list', { root }),
   vaultRead: (root, path) => invoke('vault_read', { root, path }),
+  vaultWrite: (root, path, text) => invoke('vault_write', { root, path, text }),
 
   onProgress(handler) {
     let stop: (() => void) | null = null

@@ -69,7 +69,7 @@ Eine Zeitleiste hat einen **Basisstrang** und beliebig viele **abgeleitete Strä
 
 ## Projektdatei
 
-`.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Zeitleiste und Ereignisse, Typenlisten, Stile, Ebenen und Presets, Vault-Pfad. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
+`.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Zeitleiste und Ereignisse, Typenlisten, Stile, Ebenen und Presets. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
 
 ### Zeitleiste im Datenformat
 
@@ -105,6 +105,12 @@ Die Welt eines Strangs *S* im Jahr *J* beim Meilenstein *M* (fehlt *M*: `current
 [`web/model/timeline.ts`](web/model/timeline.ts) macht genau das und hängt nur von Typen ab, lässt sich also übernehmen: `resolveWorld(project, J, { strand, milestone })` liefert das ganze Projekt, `compareViews(project, J, a, b)` die Unterschiede zweier Stränge, `eventsIn(project, view)` die Ereignisse, `happeningsIn(project, J, view)` was in einem Jahr geschieht, `reckoningOf(timeline, strand)` und `toOwnYear`/`toBaseYear` die Zeitrechnung eines Strangs. Dateien mit der Zeitleiste von 0.11 (`{ start, end, unit, eras }`) werden beim Öffnen zu einem einzigen Basisstrang.
 
 Listen der Elemente: `states`, `provinces`, `cultures`, `religions`, `zones`, `institutions`, `cities`, `routes`, `rivers`, `labels`, `markers`, `regiments`.
+
+## Obsidian
+
+Elemente lassen sich mit Notes im Vault verknüpfen; der Inspektor zeigt deren Frontmatter. Den Vault-Ordner kennt jedes Gerät für sich (bis 0.10 stand er in der Projektdatei und wird beim ersten Öffnen übernommen, wenn er zum Gerät passt), damit ein synchronisiertes Projekt keinen fremden Pfad mitbringt.
+
+**Kartenstand** (Projekt → Obsidian, ab Werk aus): eine Note mit allen Staaten, Provinzen, Kulturen, Religionen, Zonen, Städten, Markern und benannten Linien. Zu jeder Stadt stehen Klima (Köppen), Höhe, Entfernung zur Küste, Lage und Zugehörigkeit dabei, zu jedem Gebiet Klima und Höhe über seine Landfläche – genug, damit etwa Claude in Obsidian Namen passend zu Landschaft und Kultur vorschlagen kann. Die Note wird 15 s nach der letzten Änderung neu geschrieben, nur wenn sich ihr Text geändert hat, und nur von dem Gerät, auf dem der Schalter an ist (pro Projekt). Solange Gelände oder Klimakarte noch laden, wartet sie, statt Lücken zu schreiben.
 
 ## Archiv `.veilmap`
 

@@ -4,6 +4,7 @@ import { platform } from '../platform'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats } from './derive'
 import { areaKm2, lineLengthM } from './geo'
 import { readFrontmatter } from './obsidian'
+import { vaultSettings } from './vault'
 import { fullPath } from './routing'
 import { notify, project, reckoning, source, strand, year } from './store'
 import { eventsIn, toOwnYear } from './timeline'
@@ -129,9 +130,9 @@ async function properties(p: Project, kind: EntityKind, entity: Entity, withFron
       break
     }
   }
-  if (withFrontmatter && entity.note && p.obsidian.vaultPath) {
+  if (withFrontmatter && entity.note && vaultSettings.peek().path) {
     try {
-      const data = await readFrontmatter(p, entity.note)
+      const data = await readFrontmatter(entity.note)
       if (data) base.frontmatter = data
     } catch {
       /* note gone: export without it */

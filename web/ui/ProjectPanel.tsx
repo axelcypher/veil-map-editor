@@ -6,10 +6,12 @@ import { IMAGE_FILTER, importImageLayer, importKoppen, importRivers, importSatel
 import { EXPORT_LAYERS, exportGeoJson, exportJson } from '../model/export'
 import { formatInt, formatLonLat } from '../model/geo'
 import { refreshVault, vaultError, vaultNotes } from '../model/obsidian'
+import { overviewSettings, overviewStatus, projectKey, setOverviewSettings, writeOverview } from '../model/overview'
 import { KIND_NAMES, newId } from '../model/project'
-import { busy, commit, patchProject, project, tool } from '../model/store'
+import { busy, commit, filePath, patchProject, project, tool } from '../model/store'
 import { imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import type { ControlPoint, EntityKind, KoppenClass } from '../model/types'
+import { patchVault, vaultSettings } from '../model/vault'
 import { platform } from '../platform'
 import { Check, Field, Num, Section, Select, Text } from './components'
 
@@ -420,21 +422,25 @@ function KoppenImport() {
 
 function Obsidian() {
   const p = project.value
-  const set = (patch: Partial<typeof p.obsidian>) => patchProject({ obsidian: { ...p.obsidian, ...patch } }, 'obsidian')
+  const vault = vaultSettings.value
+  const key = projectKey(p, filePath.value)
+  const overview = overviewSettings(p, key)
+  const status = overviewStatus.value
+  const setPath = (path: string) => {
+    patchVault({ path })
+    refreshVault()
+  }
   return (
     <>
-      <Field label="Vault-Ordner" hint={platform.kind === 'web' ? 'Web: „https://127.0.0.1:27124|API-Key“ des Plugins Local REST API' : 'Nur dieser Ordner wird gelesen.'} wide>
+      <Field label="Vault-Ordner" hint={platform.kind === 'web' ? 'Web: „https://127.0.0.1:27124|API-Key“ des Plugins Local REST API. Gilt nur für diesen Browser.' : 'Gilt nur für dieses Gerät. Der Editor greift nur auf diesen Ordner zu.'} wide>
         <span class="inline path-picker">
-          <input type="text" value={p.obsidian.vaultPath} onInput={e => set({ vaultPath: (e.target as HTMLInputElement).value })} />
+          <input type="text" value={vault.path} onInput={e => patchVault({ path: (e.target as HTMLInputElement).value })} onChange={() => refreshVault()} />
           {platform.kind === 'desktop' && (
             <button
               class="small"
               onClick={async () => {
                 const folder = await platform.pickFolder('Obsidian-Vault freigeben')
-                if (folder) {
-                  set({ vaultPath: folder })
-                  refreshVault({ ...p, obsidian: { ...p.obsidian, vaultPath: folder } })
-                }
+                if (folder) setPath(folder)
               }}
             >
               …
@@ -443,10 +449,10 @@ function Obsidian() {
         </span>
       </Field>
       <Field label="Vault-Name" hint="für obsidian://-Links; leer = Ordnername">
-        <Text value={p.obsidian.vaultName} onInput={v => set({ vaultName: v })} />
+        <Text value={vault.name} onInput={v => patchVault({ name: v })} />
       </Field>
       <div class="button-row">
-        <button onClick={() => refreshVault(p)} disabled={!p.obsidian.vaultPath}>
+        <button onClick={() => refreshVault()} disabled={!vault.path}>
           Vault neu einlesen
         </button>
         {vaultNotes.value && <span class="muted">{vaultNotes.value.length} Notes</span>}
@@ -454,6 +460,30 @@ function Obsidian() {
       {vaultError.value && <p class="error-text">{vaultError.value}</p>}
       {vaultError.value && platform.mobile && <p class="hint">Android: In den App-Infos unter Berechtigungen „Zugriff auf alle Dateien“ erlauben, dann den Vault neu einlesen.</p>}
       <p class="hint">Lesbar ist nur echtes Frontmatter; Werte, die erst Dataview berechnet, stehen nicht in der Datei.</p>
+
+      <h4>Kartenstand</h4>
+      <p class="hint">
+        Eine Note mit allen Staaten, Städten und benannten Orten samt Klima, Höhe, Küstenentfernung und Zugehörigkeit – etwa damit Claude in Obsidian beim Benennen die Karte kennt. Wird nach Änderungen
+        von selbst aktualisiert, nur von diesem Gerät.
+      </p>
+      {!vault.path ? (
+        <p class="muted">Erst einen Vault-Ordner angeben.</p>
+      ) : !key ? (
+        <p class="muted">Erst das Projekt speichern oder mit dem Sync-Server verknüpfen.</p>
+      ) : (
+        <>
+          <Check label="Kartenstand in den Vault schreiben" checked={overview.on} onChange={on => setOverviewSettings(key, { on })} />
+          <Field label="Note" hint="Pfad im Vault, mit .md" wide>
+            <Text value={overview.note} onInput={note => setOverviewSettings(key, { note })} />
+          </Field>
+          <div class="button-row">
+            <button onClick={() => writeOverview(true)} disabled={!overview.on || !/\.md$/i.test(overview.note)}>
+              Jetzt schreiben
+            </button>
+          </div>
+          {status && overview.on && <p class={status.error ? 'error-text' : 'muted'}>{status.text}</p>}
+        </>
+      )}
     </>
   )
 }

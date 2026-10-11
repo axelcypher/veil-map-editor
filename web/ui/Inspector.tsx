@@ -299,7 +299,7 @@ function CityPlan({ city }: { city: City }) {
   }, [plan])
   const open = () => {
     if (isUrl) platform.openExternal(plan)
-    else if (isNote) platform.openExternal(obsidianUrl(project.value, plan))
+    else if (isNote) platform.openExternal(obsidianUrl(plan))
     else platform.openFile(plan).catch(e => notify(String(e), 'error'))
   }
   return (

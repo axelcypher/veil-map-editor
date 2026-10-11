@@ -208,6 +208,11 @@ fn vault_read(root: String, path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn vault_write(root: String, path: String, text: String) -> Result<(), String> {
+    vault::write(&root, &path, &text)
+}
+
+#[tauri::command]
 fn read_text(app: tauri::AppHandle, path: String) -> Result<String, String> {
     String::from_utf8(read_user(&app, &path)?).map_err(|e| format!("{path}: {e}"))
 }
@@ -417,6 +422,7 @@ pub fn run() {
             koppen_histogram,
             vault_list,
             vault_read,
+            vault_write,
             read_text,
             write_text,
             write_binary,
