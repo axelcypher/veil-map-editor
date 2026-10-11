@@ -49,9 +49,14 @@ export interface Change extends Owned {
   until?: string
 }
 
+/** where in the world an element lies: on the ground, up in the sky or below ground */
+export type WorldLevel = 'surface' | 'sky' | 'underground'
+
 export interface Base extends Owned {
   id: string
   name: string
+  /** absent: the surface */
+  level?: WorldLevel
   /** free text attached to the element */
   description: string
   /** vault-relative path of the linked Obsidian note, '' when none */
@@ -536,5 +541,7 @@ export interface Project {
   archive: ArchiveOptions
   globe: GlobeOptions
   /** per device: where the map looks, which strand, year (base years) and milestone it shows */
-  view: { center: LonLat; zoom: number; year?: number; strand?: string; milestone?: string | null }
+  /** the sky starts at this height (metres); land above it shows as on the surface */
+  levels: { skyAltitude: number }
+  view: { center: LonLat; zoom: number; year?: number; strand?: string; milestone?: string | null; level?: WorldLevel }
 }

@@ -1,5 +1,6 @@
 // How each kind of element is drawn. Styles are cached per element object: the project is
 // immutable, so a changed element is a new object and gets a new style.
+import { glyphOf, GLYPHS } from '../model/glyphs'
 import type { FeatureLike } from 'ol/Feature'
 import type Geometry from 'ol/geom/Geometry'
 import type LineString from 'ol/geom/LineString'
@@ -158,10 +159,25 @@ function markerIcon(icon: string, color: string, size: number) {
     c.lineWidth = 2
     c.strokeStyle = color
     c.stroke()
-    c.font = `${Math.round(px * 0.58)}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`
-    c.textAlign = 'center'
-    c.textBaseline = 'middle'
-    c.fillText(icon, px / 2 + 2, px / 2 + 3)
+    const glyph = glyphOf(icon)
+    if (glyph) {
+      // the 24-unit symbol in the middle of the disc, in the marker's colour
+      const scale = (px * 0.62) / 24
+      c.save()
+      c.translate(px / 2 + 2 - 12 * scale, px / 2 + 2 - 12 * scale)
+      c.scale(scale, scale)
+      c.lineWidth = 1.9
+      c.lineCap = 'round'
+      c.lineJoin = 'round'
+      for (const d of GLYPHS[glyph].paths) c.stroke(new Path2D(d))
+      c.restore()
+    } else {
+      c.font = `${Math.round(px * 0.58)}px "Segoe UI", sans-serif`
+      c.fillStyle = color
+      c.textAlign = 'center'
+      c.textBaseline = 'middle'
+      c.fillText(icon, px / 2 + 2, px / 2 + 3)
+    }
     url = canvas.toDataURL()
     markerIcons.set(key, url)
   }
@@ -274,7 +290,7 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
         const scale = marker.size * s.symbolScale
         styles = [
           new Style({
-            image: new Icon({ src: markerIcon(type?.icon ?? '📍', selected ? SELECT_COLOR : (type?.color ?? '#b0302c'), 1), scale: scale * (bucket === 0 ? 0.7 : 1) }),
+            image: new Icon({ src: markerIcon(type?.icon ?? 'poi', selected ? SELECT_COLOR : (type?.color ?? '#b0302c'), 1), scale: scale * (bucket === 0 ? 0.7 : 1) }),
             text: s.showLabels && bucket > 0 ? textStyle(s, marker.name, { offsetY: 20 * scale }) : undefined,
           }),
         ]

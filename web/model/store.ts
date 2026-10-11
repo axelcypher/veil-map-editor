@@ -7,7 +7,7 @@
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
 import { baseStrand, compareViews, GHOSTS, reckoningOf, record, removeFromProject, resolveWorld, storedStrand, type Difference, type Ghosts, type View } from './timeline'
-import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
+import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project, type WorldLevel } from './types'
 
 export const source = signal<Project>(newProject())
 /** the year the world is shown in, in base years; null when the project has no timeline */
@@ -18,6 +18,8 @@ export const strand = signal('')
 export const milestone = signal<string | null | undefined>(undefined)
 /** show what the strand holds back of its parent, faintly */
 export const showHeld = signal(false)
+/** the level of the world shown: only its elements are on the map, and new ones go there */
+export const level = signal<WorldLevel>('surface')
 
 /** the strand id, made valid for the project (unknown: the base) */
 function validStrand(p: Project, wanted: string | undefined) {
@@ -62,7 +64,19 @@ export function clampYear(p: Project, wanted: number | null | undefined, strandI
 /** remembered with the view, per device; the view is no undo step and no reason to save */
 function rememberView() {
   const p = source.peek()
-  p.view = { ...p.view, year: year.peek() ?? undefined, strand: strand.peek() || undefined, milestone: milestone.peek() }
+  p.view = { ...p.view, year: year.peek() ?? undefined, strand: strand.peek() || undefined, milestone: milestone.peek(), level: level.peek() === 'surface' ? undefined : level.peek() }
+}
+
+export function setLevel(next: WorldLevel) {
+  if (next === level.peek()) return
+  level.value = next
+  rememberView()
+}
+
+/** a new element lies on the level shown */
+export function onLevel<T extends { level?: WorldLevel }>(entity: T): T {
+  const l = level.peek()
+  return l === 'surface' ? entity : { ...entity, level: l }
 }
 
 /** shows the world in another year (base years) */
@@ -117,7 +131,7 @@ export type Tool =
   | { id: 'select' }
   | { id: 'place'; kind: 'city' | 'marker' | 'regiment' | 'label' }
   | { id: 'draw-line'; kind: 'route' | 'label' }
-  | { id: 'area-new'; kind: AreaKind }
+  | { id: 'area-new'; kind: AreaKind; zoneType?: string }
   | { id: 'area-add' | 'area-subtract' | 'area-island'; kind: AreaKind; entityId: string }
   | { id: 'vertices' }
   | { id: 'reshape'; entityId: string }
@@ -254,6 +268,7 @@ export function resetProject(next: Project, path: string | null) {
     strand.value = validStrand(next, next.view.strand)
     milestone.value = next.view.milestone
     showHeld.value = false
+    level.value = next.view.level ?? 'surface'
     year.value = clampYear(next, next.view.year, strand.value)
     filePath.value = path
     dirty.value = false
@@ -301,12 +316,13 @@ function withList<K extends EntityKind>(p: Project, kind: K, items: EntityMap[K]
 }
 
 export function addEntity<K extends EntityKind>(kind: K, entity: EntityMap[K], select = true) {
+  entity = onLevel(entity)
   commit(withList(project.value, kind, [...list(kind), entity]))
   if (select) selection.value = { kind, id: entity.id }
 }
 
 export function addEntities<K extends EntityKind>(kind: K, entities: EntityMap[K][]) {
-  commit(withList(project.value, kind, [...list(kind), ...entities]))
+  commit(withList(project.value, kind, [...list(kind), ...entities.map(onLevel)]))
 }
 
 export function updateEntity<K extends EntityKind>(kind: K, id: string, patch: Partial<EntityMap[K]>, merge?: string) {

@@ -5,7 +5,7 @@ import { BorderModeSelect } from './MapChrome'
 import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
-import { KIND_NAMES } from '../model/project'
+import { KIND_NAMES, LEVEL_NAMES, levelOf } from '../model/project'
 import { editStrand, notify, project, removeEntity, selectedEntity, selection, selectionHeld, snapCities, storedEntity, tool, updateEntity, year } from '../model/store'
 import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
@@ -604,7 +604,7 @@ function MarkerFields({ m }: { m: Marker }) {
   return (
     <>
       <Field label="Typ">
-        <Select value={m.type} onChange={v => up({ type: v } as Partial<Marker>)} options={p.catalog.markerTypes.map(t => ({ id: t.id, name: `${t.icon} ${t.name}` }))} />
+        <Select value={m.type} onChange={v => up({ type: v } as Partial<Marker>)} options={p.catalog.markerTypes.map(t => ({ id: t.id, name: t.name }))} />
       </Field>
       <Field label="Größe">
         <Num value={m.size} min={0.3} max={4} step={0.1} onChange={v => up({ size: v } as Partial<Marker>, 'size')} />
@@ -705,6 +705,9 @@ export function Inspector() {
       <div class="inspector-body">
         <Field label={kind === 'label' ? 'Text' : 'Name'}>
           <Text value={entity.name} onInput={v => up({ name: v }, 'name')} />
+        </Field>
+        <Field label="Ebene" hint="Himmel, Oberfläche oder Untergrund; die Karte zeigt jeweils nur eine">
+          <Select value={levelOf(entity)} onChange={v => up({ level: v === 'surface' ? undefined : v })} options={(['sky', 'surface', 'underground'] as const).map(id => ({ id, name: LEVEL_NAMES[id] }))} />
         </Field>
         {hasColor && (
           <Field label="Farbe">

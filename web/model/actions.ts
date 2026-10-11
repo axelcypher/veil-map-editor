@@ -6,7 +6,7 @@ import { defaultKoppenClasses } from './catalog'
 import { bboxHit, bboxOf, distanceM } from './geo'
 import { create, newId, newProject, parseProject, serializeProject } from './project'
 import {
-  addEntity, busy, commit, commitSource, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, snapCities, source, tool,
+  addEntity, busy, commit, commitSource, dirty, filePath, findEntity, list, notify, onLevel, patchProject, placeType, project, resetProject, selection, snapCities, source, tool,
   updateEntity, type Tool,
 } from './store'
 import { avoidLand, dockEnds, followPoint, reshapeLine, settleJunctions, snapEnds } from './routing'
@@ -656,15 +656,20 @@ function applyBorders(p: Project, kind: AreaKind, id: string, stateId: string, s
   return { shape, next: q => q }
 }
 
+const CAVE_TYPE = { id: 'cave', name: 'Höhle', color: '#b39b78', pattern: 'fill' as const }
+
 export function handleArea(t: Tool, polygon: LonLat[][], at: LonLat) {
   const p = project.value
   if (t.id === 'area-new') {
-    const entity = t.kind === 'province' ? create.province(p, selectionState()) : create[t.kind](p)
+    const zoneType = t.kind === 'zone' ? (t.zoneType ?? placeType.value.zone) : undefined
+    // the cave tool brings its zone type along when the project has none
+    const typed = zoneType === 'cave' && !p.catalog.zoneTypes.some(z => z.id === 'cave') ? { ...p, catalog: { ...p.catalog, zoneTypes: [...p.catalog.zoneTypes, CAVE_TYPE] } } : p
+    const entity = onLevel(t.kind === 'province' ? create.province(typed, selectionState()) : t.kind === 'zone' ? create.zone(typed, zoneType) : create[t.kind](typed))
     const stateId = (entity as { stateId?: string }).stateId ?? ''
     const ruled = applyBorders(p, t.kind, entity.id, stateId, [polygon] as unknown as PcMulti)
     if (!ruled) return
     entity.geometry = fromMulti(ruled.shape)
-    const next: Project = ruled.next({ ...p, [collectionOf(t.kind)]: [...(p[collectionOf(t.kind)] as AreaBase[]), entity] })
+    const next: Project = ruled.next({ ...typed, [collectionOf(t.kind)]: [...(p[collectionOf(t.kind)] as AreaBase[]), entity] })
     commit(next)
     selection.value = { kind: t.kind, id: entity.id }
     tool.value = { id: 'area-add', kind: t.kind, entityId: entity.id }

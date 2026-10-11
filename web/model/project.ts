@@ -1,8 +1,9 @@
 // Creating, reading and writing projects, and new elements with sensible defaults.
 import { defaultCatalog, defaultDisplay, defaultKoppenClasses, defaultLayers, defaultStyle } from './catalog'
 import { migrateTimeline } from './timeline'
+import { GLYPHS, LEGACY_GLYPHS } from './glyphs'
 import { adoptLegacyVault } from './vault'
-import type { City, Culture, EntityKind, EntityMap, Institution, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Strand, Timeline, WorldEvent, Zone } from './types'
+import type { City, Culture, EntityKind, EntityMap, Institution, MarkerType, WorldLevel, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Strand, Timeline, WorldEvent, Zone } from './types'
 
 export const PLANET_RADIUS = 6_606_727
 
@@ -46,9 +47,13 @@ export function newProject(): Project {
     display: defaultDisplay(),
     archive: defaultArchiveOptions(),
     globe: defaultGlobe(),
+    levels: { skyAltitude: 2500 },
     view: { center: [0, 0], zoom: 1 },
   }
 }
+
+export const LEVEL_NAMES: Record<WorldLevel, string> = { surface: 'Oberfläche', sky: 'Himmel', underground: 'Untergrund' }
+export const levelOf = (entity: { level?: WorldLevel }): WorldLevel => entity.level ?? 'surface'
 
 export const defaultArchiveOptions = (): Project['archive'] => ({ quality: 85, lossless: false, heights: 'none', satellite: true, koppen: true, images: true })
 
@@ -113,8 +118,8 @@ export const create = {
     deity: '',
     origins: [],
   }),
-  zone: (p: Project): Zone => {
-    const type = p.catalog.zoneTypes[0]
+  zone: (p: Project, typeId?: string): Zone => {
+    const type = p.catalog.zoneTypes.find(t => t.id === typeId) ?? p.catalog.zoneTypes[0]
     return {
       ...base('zone', `Zone ${p.zones.length + 1}`),
       color: type?.color ?? '#b22222',
@@ -122,7 +127,8 @@ export const create = {
       clip: false,
       type: type?.id ?? '',
       pattern: type?.pattern ?? 'hatch',
-      opacity: 0.35,
+      // a cave is a hollow in the dark rock: drawn nearly solid
+      opacity: type?.id === 'cave' ? 0.85 : 0.35,
     }
   },
   institution: (p: Project): Institution => ({
@@ -227,6 +233,22 @@ export const newEvent = (p: Project, year: number, strand?: string): WorldEvent 
   refs: [],
 })
 
+/** the colours of the built-in marker types up to 0.17; a type that still has one gets the new, quieter one */
+const OLD_MARKER_COLORS: Record<string, string> = {
+  volcano: '#b83a1e', ruin: '#7a6a55', mine: '#5a5048', cave: '#3b3632', shrine: '#a3432c', battle: '#8a1c1c', castle: '#5b4a3a', tower: '#4f4a6a',
+  bridge: '#6b5a44', harbor: '#1f4e79', lighthouse: '#c9a227', monster: '#2f6b2f', treasure: '#2a7fa8', spring: '#2b6cb0', portal: '#6b46c1',
+  camp: '#7b5e3b', grave: '#555555', wreck: '#3d5a73', poi: '#b0302c',
+}
+
+/** emoji become line symbols; built-in colours left as they were become the new ones */
+function upgradeMarkerType(type: MarkerType): MarkerType {
+  const legacy = LEGACY_GLYPHS[type.icon]
+  const icon = legacy ? (GLYPHS[type.id] ? type.id : legacy) : type.icon
+  const builtin = defaultCatalog().markerTypes.find(t => t.id === type.id)
+  const color = builtin && OLD_MARKER_COLORS[type.id] === type.color.toLowerCase() ? builtin.color : type.color
+  return icon === type.icon && color === type.color ? type : { ...type, icon, color }
+}
+
 /** fills in everything a file from an older or hand-edited version lacks */
 export function parseProject(text: string): Project {
   const { obsidian, ...data } = JSON.parse(text) as Partial<Project> & { format?: string; obsidian?: { vaultPath?: string; vaultName?: string } }
@@ -239,6 +261,8 @@ export function parseProject(text: string): Project {
   merged.style = { ...fresh.style, ...data.style }
   for (const id of Object.keys(fresh.style) as (keyof Project['style'])[]) merged.style[id] = { ...fresh.style[id], ...data.style?.[id] }
   merged.display = { ...fresh.display, ...data.display }
+  merged.levels = { ...fresh.levels, ...data.levels }
+  merged.catalog.markerTypes = merged.catalog.markerTypes.map(upgradeMarkerType)
   // a timeline of an earlier version (one range) becomes a single base strand
   merged.timeline = migrateTimeline(data.timeline)
   merged.archive = { ...fresh.archive, ...data.archive }

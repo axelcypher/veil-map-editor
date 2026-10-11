@@ -13,7 +13,8 @@ import { areaKm2, distanceM, formatInt, formatKm2, inArea } from './geo'
 import { filePath, source } from './store'
 import { clippedGeometry, gridHeight, islandAt, koppen, koppenAt, terrain } from './terrain'
 import { baseStrand, reckoningOf, resolveWorld, toOwnYear } from './timeline'
-import type { AreaBase, AreaGeometry, City, LonLat, NamedType, Project } from './types'
+import { LEVEL_NAMES } from './project'
+import type { AreaBase, AreaGeometry, City, LonLat, NamedType, Project, WorldLevel } from './types'
 import { patchVault, vaultSettings, type OverviewSettings } from './vault'
 
 /** after the last change, so a burst of edits makes one write */
@@ -136,6 +137,8 @@ const percent = (share: number) => `${Math.round(share * 100)} %`
 const lonLat = ([lon, lat]: LonLat) =>
   `${Math.abs(lat).toFixed(1).replace('.', ',')}° ${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1).replace('.', ',')}° ${lon >= 0 ? 'O' : 'W'}`
 
+/** empty on the surface, so the column only shows when something lies elsewhere */
+const levelCell = (x: { level?: WorldLevel }) => (x.level && x.level !== 'surface' ? LEVEL_NAMES[x.level] : '')
 const typeName = (types: NamedType[], id: string) => types.find(t => t.id === id)?.name ?? id
 
 function table(head: string[], rows: string[][]) {
@@ -213,6 +216,7 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
     return [
       cell(f.city.name),
       cell(typeName(p.catalog.cityTypes, f.city.type)),
+      levelCell(f.city),
       formatInt(f.city.population),
       f.climate ?? '',
       metres(f.height),
@@ -229,7 +233,7 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
       cell(f.city.description),
     ]
   }
-  const CITY_HEAD = ['Stadt', 'Typ', 'Einw.', 'Klima', 'Höhe', 'Küste', 'Lage', 'Staat', 'Provinz', 'Kultur', 'Religion', 'Zonen', 'Gruppe', 'Merkmale', 'Notiz', 'Beschreibung']
+  const CITY_HEAD = ['Stadt', 'Typ', 'Ebene', 'Einw.', 'Klima', 'Höhe', 'Küste', 'Lage', 'Staat', 'Provinz', 'Kultur', 'Religion', 'Zonen', 'Gruppe', 'Merkmale', 'Notiz', 'Beschreibung']
   const byPopulation = (a: CityFacts, b: CityFacts) => b.city.population - a.city.population
 
   const out: string[] = []
@@ -239,7 +243,8 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
       (when ? `Die Welt im ${when} – der Gegenwart der Zeitleiste. ` : '') +
       'Werte am Ort jeder Stadt: Klima nach Köppen, Höhe über dem Meer, Entfernung zur Küste, Lage. ' +
       'Staat, Provinz, Kultur, Religion und Zonen ergeben sich aus der Lage auf der Karte. ' +
-      'Klima und Höhe der Gebiete sind über ihre Landfläche gemittelt.',
+      'Klima und Höhe der Gebiete sind über ihre Landfläche gemittelt. ' +
+      `„Ebene“ leer heißt Oberfläche; der Himmel beginnt in ${formatInt(p.levels.skyAltitude)} m Höhe.`,
   )
 
   // states with their cities
@@ -328,7 +333,7 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
       const cities = p.cities.filter(c => members.get(c.id)?.zones.includes(x.id)).length
       out.push(
         `- **${line(x.name)}** · ` +
-          facts([x.type && typeName(p.catalog.zoneTypes, x.type), `Städte: ${cities}`, x.note && `Notiz: ${link(x.note)}`, x.description && line(x.description)]),
+          facts([x.type && typeName(p.catalog.zoneTypes, x.type), x.level && LEVEL_NAMES[x.level], `Städte: ${cities}`, x.note && `Notiz: ${link(x.note)}`, x.description && line(x.description)]),
       )
     }
   }
@@ -361,9 +366,9 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
       const code = climateAt(point)
       if (code) usedClimates.add(code)
       const state = p.states.find(s => inArea(s.geometry, point))?.name ?? ''
-      return [cell(x.name), cell(typeName(p.catalog.markerTypes, x.type)), code ?? '', metres(gridHeight(point)), lonLat(point), cell(state), linkCell(x.note), cell(x.description)]
+      return [cell(x.name), cell(typeName(p.catalog.markerTypes, x.type)), levelCell(x), code ?? '', metres(gridHeight(point)), lonLat(point), cell(state), linkCell(x.note), cell(x.description)]
     })
-    out.push(table(['Marker', 'Typ', 'Klima', 'Höhe', 'Lage', 'Staat', 'Notiz', 'Beschreibung'], rows))
+    out.push(table(['Marker', 'Typ', 'Ebene', 'Klima', 'Höhe', 'Lage', 'Staat', 'Notiz', 'Beschreibung'], rows))
   }
   const rivers = p.rivers.filter(r => r.name)
   if (rivers.length) {

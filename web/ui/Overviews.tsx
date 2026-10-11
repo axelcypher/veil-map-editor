@@ -10,6 +10,7 @@ import { addEntity, list, patchProject, project, selection, source, tool } from 
 import { Chronicle } from './Timeline'
 import { AREA_KINDS, type AreaKind, type EntityKind, type Project } from '../model/types'
 import { mapView } from './mapRef'
+import { MarkerSymbol } from './icons'
 import { Section, Swatch, Table, Tabs, type Column } from './components'
 
 export type OverviewId = 'chronicle' | 'states' | 'cultures' | 'religions' | 'zones' | 'institutions' | 'cities' | 'routes' | 'rivers' | 'markers' | 'labels' | 'charts' | 'conflicts'
@@ -151,7 +152,7 @@ function MarkerList() {
   const counts = new Map<string, number>()
   for (const m of p.markers) counts.set(m.type, (counts.get(m.type) ?? 0) + 1)
   const columns: Column<Project['markers'][number]>[] = [
-    { id: 'name', name: 'Name', value: m => m.name, render: m => <>{p.catalog.markerTypes.find(t => t.id === m.type)?.icon} {m.name}</> },
+    { id: 'name', name: 'Name', value: m => m.name, render: m => <><MarkerSymbol icon={p.catalog.markerTypes.find(t => t.id === m.type)?.icon} /> {m.name}</> },
     { id: 'type', name: 'Typ', value: m => nameIn(p.catalog.markerTypes, m.type) },
   ]
   return (
@@ -166,7 +167,7 @@ function MarkerList() {
           {p.catalog.markerTypes.map(t => (
             <label key={t.id} class={`type-toggle${hidden.includes(t.id) ? ' off' : ''}`}>
               <input type="checkbox" checked={!hidden.includes(t.id)} onChange={() => toggle(t.id)} />
-              <span>{t.icon}</span> {t.name} <span class="muted">{counts.get(t.id) ?? 0}</span>
+              <MarkerSymbol icon={t.icon} /> {t.name} <span class="muted">{counts.get(t.id) ?? 0}</span>
             </label>
           ))}
         </div>

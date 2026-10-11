@@ -4,10 +4,10 @@
 // set changes only while that strand is shown, so a reader that shows one strand never sees what
 // was done in another, and picks itself which sets it follows. Per device, off unless switched on.
 import { effect, signal } from '@preact/signals'
-import { milestone, project, source, strand, year } from './store'
+import { level, milestone, project, source, strand, year } from './store'
 import { configured, request, SyncError, syncSettings } from './sync'
 import { reckoningOf, toOwnYear } from './timeline'
-import type { LayerId, LonLat, Project } from './types'
+import type { LayerId, LonLat, Project, WorldLevel } from './types'
 
 export const VIEW_SUFFIX = '.view'
 export const viewItemOf = (item: string) => `${item}${VIEW_SUFFIX}`
@@ -28,6 +28,9 @@ export interface ViewSet {
   /** the milestone shown (the timeline's current one unless one was picked); null: all */
   milestone: string | null
   milestoneName: string
+  /** the level of the world shown, and where the sky begins (metres) */
+  level: WorldLevel
+  skyAltitude: number
   layers: { id: LayerId; visible: boolean; opacity: number; labels: boolean | null }[]
   /** the map frame: centre and zoom as the editor counts them, and the visible area in degrees */
   center: LonLat
@@ -91,6 +94,8 @@ function currentSet(p: Project): ViewSet | null {
     unit: r?.unit ?? '',
     milestone: milestoneId ?? null,
     milestoneName: t?.milestones.find(m => m.id === milestoneId)?.name ?? '',
+    level: level.peek(),
+    skyAltitude: p.levels.skyAltitude,
     layers: p.layers.map(l => ({ id: l.id, visible: l.visible, opacity: l.opacity, labels: (p.style as Record<string, { showLabels?: boolean }>)[l.id]?.showLabels ?? null })),
     center: frame.center,
     zoom: frame.zoom,
@@ -173,6 +178,7 @@ export function startViewShare() {
     void year.value
     void strand.value
     void milestone.value
+    void level.value
     void mapFrame.value
     void syncSettings.value
     const item = source.value.sync?.item

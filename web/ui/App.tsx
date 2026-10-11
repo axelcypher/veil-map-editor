@@ -1,13 +1,15 @@
 import { effect } from '@preact/signals'
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { CloudIcon, CultureIcon, GlobeIcon, PathMeasureIcon, PinIcon, RegimentIcon, RulerIcon, SaveIcon } from './icons'
+import { CaveIcon, CloudIcon, CultureIcon, GlobeIcon, PathMeasureIcon, PinIcon, RegimentIcon, RulerIcon, SaveIcon } from './icons'
 import logoUrl from '../assets/logo.svg'
 import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
 import { CLOUD_RECENT, confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
-import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setYear, source, tool, undo, view as shownView, year, differences, compareWorld, type Tool } from '../model/store'
+import { LEVEL_NAMES, levelOf } from '../model/project'
+import type { WorldLevel } from '../model/types'
+import { canRedo, canUndo, commit, findEntity, level, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setLevel, setYear, source, tool, undo, view as shownView, year, differences, compareWorld, type Tool } from '../model/store'
 import { changeYears } from '../model/timeline'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
@@ -67,11 +69,15 @@ const TOOL_GROUPS: ToolButton[][] = [
 
 const sameTool = (a: Tool, b: Tool) => JSON.stringify(a) === JSON.stringify(b)
 
+/** only below ground */
+const CAVE_TOOLS: ToolButton[] = [{ icon: <CaveIcon />, name: 'Höhle zeichnen (Zone vom Typ Höhle)', tool: { id: 'area-new', kind: 'zone', zoneType: 'cave' } }]
+
 function Toolbar() {
   const current = tool.value
+  const groups = level.value === 'underground' ? [...TOOL_GROUPS, CAVE_TOOLS] : TOOL_GROUPS
   return (
     <nav class="toolbar" aria-label="Werkzeuge">
-      {TOOL_GROUPS.map((group, i) => (
+      {groups.map((group, i) => (
         <div class="tool-group" key={i}>
           {group.map(button => (
             <button
@@ -86,6 +92,42 @@ function Toolbar() {
         </div>
       ))}
     </nav>
+  )
+}
+
+const LEVELS: { id: WorldLevel; title: string }[] = [
+  { id: 'sky', title: 'Himmel: der Boden unter der Himmelshöhe hell verschleiert, höheres Land klar' },
+  { id: 'surface', title: 'Oberfläche' },
+  { id: 'underground', title: 'Untergrund: die Karte abgedunkelt, Höhlen hell' },
+]
+
+/** which level of the world is shown and edited */
+function LevelSwitch() {
+  const current = level.value
+  const altitude = project.value.levels.skyAltitude
+  return (
+    <div class="level-switch" role="group" aria-label="Ebene der Welt">
+      {LEVELS.map(l => (
+        <button key={l.id} class={current === l.id ? 'active' : ''} title={l.title} aria-pressed={current === l.id} onClick={() => setLevel(l.id)}>
+          {LEVEL_NAMES[l.id]}
+        </button>
+      ))}
+      {current === 'sky' && (
+        <label class="sky-altitude" title="Ab dieser Höhe beginnt der Himmel; Berge, die darüber reichen, erscheinen ab dort wie auf der Oberfläche">
+          ab
+          <input
+            type="number"
+            step={100}
+            value={altitude}
+            onChange={e => {
+              const value = Number((e.target as HTMLInputElement).value)
+              if (Number.isFinite(value)) commit({ ...project.peek(), levels: { ...project.peek().levels, skyAltitude: Math.round(value) } }, 'sky-altitude')
+            }}
+          />
+          m
+        </label>
+      )}
+    </div>
   )
 }
 
@@ -328,9 +370,19 @@ function useMap(container: { current: HTMLDivElement | null }) {
     }
     view.map.on('postrender', updateInfo)
     const stops = [
+      effect(() => {
+        const s = selection.value
+        const entity = s ? findEntity(s.kind, s.id, project.peek()) : undefined
+        if (entity) setLevel(levelOf(entity))
+      }),
       effect(() => view.applyProject(project.value)),
       effect(() => {
         if (projectLoaded.value) view.fitWorldIfDefault(source.peek())
+      }),
+      // the level before the selection: edit handles only show for elements on the level shown
+      effect(() => {
+        const t = terrain.value
+        view.setLevel(level.value, project.value.levels.skyAltitude, t ? { data: t.grid, width: t.meta.gridWidth, height: t.meta.gridHeight } : null)
       }),
       effect(() => view.setSelection(selection.value)),
       effect(() => view.setTool(tool.value)),
@@ -508,6 +560,7 @@ export function App() {
         <Toolbar />
         <main class="map-area">
           <div ref={container} class="map" />
+          <LevelSwitch />
           <ToolOptions />
           <Compass />
           <ScaleBar />

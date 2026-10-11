@@ -24,7 +24,7 @@ import TileGrid from 'ol/tilegrid/TileGrid'
 import View from 'ol/View'
 import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
-import { AREA_KINDS, COLLECTION as COLLECTIONS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
+import { AREA_KINDS, COLLECTION as COLLECTIONS, type WorldLevel, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { isImageLayer } from '../model/catalog'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMode, type Tool } from '../model/store'
@@ -55,6 +55,11 @@ const KIND_LAYER: Record<EntityKind, LayerId> = {
   regiment: 'regiments',
 }
 const ALL_KINDS = Object.keys(KIND_LAYER) as EntityKind[]
+/** the pictures of the ground: the level overlay lies above them and below every element */
+const GROUND_LAYERS = new Set<string>(['relief', 'satellite', 'shade', 'coast', 'koppen'])
+/** how strongly the sky veils what lies below it, and the dark of the underground */
+const SKY_VEIL: [number, number, number, number] = [238, 243, 250, 0.58]
+const UNDERGROUND_SHADE = 'rgba(14, 10, 20, 0.7)'
 /** what a click picks first when things overlap */
 const PICK_ORDER: EntityKind[] = ['label', 'marker', 'city', 'regiment', 'route', 'river', 'zone', 'institution', 'province', 'state', 'religion', 'culture']
 
@@ -131,6 +136,10 @@ export class MapView {
   private selection: { kind: EntityKind; id: string } | null = null
   private measureTip: Overlay
   private readonly styleSheet = document.createElement('style')
+  /** the level shown: only its elements are drawn; the sky veils the ground below its height, the underground darkens it */
+  private level: WorldLevel = 'surface'
+  private readonly levelLayer = new ImageLayer({ className: 'layer-level' })
+  private levelKey = ''
 
   private readonly events: MapEvents
 
@@ -179,6 +188,7 @@ export class MapView {
     this.layers.graticule = this.makeGraticule(project.display)
     this.layers.texture = new TileLayer({ className: 'layer-texture' })
     for (const layer of Object.values(this.layers)) this.map.addLayer(layer)
+    this.map.addLayer(this.levelLayer)
 
     const edit = new VectorLayer({
       source: this.editSource,
@@ -358,6 +368,77 @@ export class MapView {
   }
 
   // ------------------------------------------------------------------------------------------
+  // levels of the world
+
+  /**
+   * Shows one level. `grid`: the terrain heights (metres, ≈10 km cells, rows from the north); in
+   * the sky, land higher than `skyAltitude` stays clear of the veil, with a soft edge of ±75 m.
+   */
+  setLevel(level: WorldLevel, skyAltitude: number, grid: { data: Int16Array; width: number; height: number } | null) {
+    if (level !== this.level) {
+      this.level = level
+      for (const kind of ALL_KINDS) this.syncKind(kind, this.project)
+      // edit handles of a selected element on another level go away with it
+      this.updateEditOverlay()
+      this.setTool(this.tool)
+    }
+    const key = `${level}|${level === 'sky' ? skyAltitude : ''}|${level === 'sky' && grid ? grid.data.length : ''}`
+    if (key === this.levelKey && (level !== 'sky' || grid?.data === this.levelGrid?.data)) return
+    this.levelKey = key
+    this.levelGrid = grid
+    if (level === 'surface') {
+      this.levelLayer.setSource(null)
+      return
+    }
+    let veil: HTMLCanvasElement | null = null
+    if (level === 'sky' && grid) {
+      veil = document.createElement('canvas')
+      veil.width = grid.width
+      veil.height = grid.height
+      const ctx = veil.getContext('2d')!
+      const image = ctx.createImageData(grid.width, grid.height)
+      const [r, g, b, a] = SKY_VEIL
+      for (let i = 0; i < grid.data.length; i++) {
+        const below = Math.min(1, Math.max(0, (skyAltitude + 75 - grid.data[i]) / 150))
+        image.data[i * 4] = r
+        image.data[i * 4 + 1] = g
+        image.data[i * 4 + 2] = b
+        image.data[i * 4 + 3] = Math.round(below * a * 255)
+      }
+      ctx.putImageData(image, 0, 0)
+    }
+    this.levelLayer.setSource(
+      new ImageCanvasSource({
+        projection: 'EPSG:4326',
+        ratio: 1,
+        canvasFunction: (extent, _resolution, _pixelRatio, size) => {
+          const out = document.createElement('canvas')
+          out.width = size[0]
+          out.height = size[1]
+          const c = out.getContext('2d')!
+          if (level === 'underground') {
+            c.fillStyle = UNDERGROUND_SHADE
+            c.fillRect(0, 0, size[0], size[1])
+          } else if (veil) {
+            c.imageSmoothingEnabled = true
+            const sx = ((extent[0] + 180) / 360) * veil.width
+            const sy = ((90 - extent[3]) / 180) * veil.height
+            const sw = ((extent[2] - extent[0]) / 360) * veil.width
+            const sh = ((extent[3] - extent[1]) / 180) * veil.height
+            c.drawImage(veil, sx, sy, sw, sh, 0, 0, size[0], size[1])
+          } else {
+            const [r, g, b, a] = SKY_VEIL
+            c.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`
+            c.fillRect(0, 0, size[0], size[1])
+          }
+          return out
+        },
+      }),
+    )
+  }
+  private levelGrid: { data: Int16Array; width: number; height: number } | null = null
+
+  // ------------------------------------------------------------------------------------------
   // project → layers
 
   applyProject(project: Project) {
@@ -404,7 +485,8 @@ export class MapView {
     // what the strand shown holds back of its parent comes along, faintly
     const held = ((project as unknown as Record<string, Partial<Record<string, Entity[]>> | undefined>)[GHOSTS]?.[COLLECTIONS[kind]] ?? []) as Entity[]
     const heldIds = new Set(held.map(e => e.id))
-    const entities = held.length ? [...(project[COLLECTIONS[kind]] as unknown as Entity[]), ...held] : (project[COLLECTIONS[kind]] as unknown as Entity[])
+    const all = held.length ? [...(project[COLLECTIONS[kind]] as unknown as Entity[]), ...held] : (project[COLLECTIONS[kind]] as unknown as Entity[])
+    const entities = all.filter(e => (e.level ?? 'surface') === this.level)
     const known = this.features[kind]
     const source = this.sources[kind]
     const seen = new Set<string>()
@@ -447,13 +529,16 @@ export class MapView {
   }
 
   private applyLayers(project: Project) {
+    let ground = 0
     project.layers.forEach((setting, index) => {
       const layer = this.layers[setting.id]
+      if (GROUND_LAYERS.has(setting.id) || isImageLayer(setting.id)) ground = index + 1
       if (!layer) return
       layer.setZIndex(index + 1)
       layer.setVisible(setting.visible)
       layer.setOpacity(setting.opacity)
     })
+    this.levelLayer.setZIndex(ground + 0.5)
     this.map.getTargetElement()?.style.setProperty('background', project.display.background)
   }
 
@@ -559,7 +644,7 @@ export class MapView {
     const s = this.selection
     if (!s || !(AREA_KINDS as readonly string[]).includes(s.kind)) return
     const entity = (this.project[COLLECTIONS[s.kind]] as unknown as Entity[]).find(e => e.id === s.id)
-    if (!entity?.geometry) return
+    if (!entity?.geometry || (entity.level ?? 'surface') !== this.level) return
     const feature = new Feature(toOl(entity.geometry))
     feature.set('entity', entity)
     this.editSource.addFeature(feature)

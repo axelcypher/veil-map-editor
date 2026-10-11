@@ -3,6 +3,7 @@ import { useState } from 'preact/hooks'
 import { BUILTIN_STYLE_PRESETS, LAYER_NAMES } from '../model/catalog'
 import { newId } from '../model/project'
 import { commit, patchProject, project } from '../model/store'
+import { GLYPH_OPTIONS } from '../model/glyphs'
 import { koppen } from '../model/terrain'
 import type { BuiltinLayerId, Catalog, LayerStyle, Project } from '../model/types'
 import { Check, Color, Field, Num, PresetPicker, Section, Select, Text } from './components'
@@ -139,12 +140,12 @@ const LISTS: { key: ListKey; name: string; columns: ColumnDef[]; blank: () => Re
     key: 'markerTypes',
     name: 'Markertypen',
     columns: [
-      { key: 'icon', name: 'Symbol', kind: 'text' },
+      { key: 'icon', name: 'Symbol', kind: 'select', options: GLYPH_OPTIONS },
       { key: 'name', name: 'Name', kind: 'text' },
       { key: 'color', name: 'Farbe', kind: 'color' },
       { key: 'land', name: 'nur Land', kind: 'bool' },
     ],
-    blank: () => ({ name: 'Neuer Marker', icon: '📍', color: '#b0302c', land: false }),
+    blank: () => ({ name: 'Neuer Marker', icon: 'poi', color: '#8c463c', land: false }),
   },
   {
     key: 'routeTypes',

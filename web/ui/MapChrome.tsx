@@ -123,7 +123,7 @@ export function ToolOptions() {
   let title = ''
   if (t.id === 'place') title = `${KIND_NAMES[t.kind][0]} setzen`
   if (t.id === 'draw-line') title = t.kind === 'route' ? 'Route zeichnen' : 'Beschriftung entlang einer Linie'
-  if (t.id === 'area-new') title = `${KIND_NAMES[t.kind][0]} zeichnen`
+  if (t.id === 'area-new') title = t.zoneType === 'cave' ? 'Höhle zeichnen' : `${KIND_NAMES[t.kind][0]} zeichnen`
   if (t.id === 'area-add' || t.id === 'area-subtract' || t.id === 'area-island') title = `${KIND_NAMES[t.kind][0]} bearbeiten`
   if (t.id === 'measure') title = t.mode === 'ruler' ? 'Lineal' : t.mode === 'path' ? 'Opisometer' : 'Planimeter'
   if (t.id === 'vertices') title = 'Stützpunkte'
@@ -136,8 +136,9 @@ export function ToolOptions() {
     <div class="tool-options">
       <strong>{title}</strong>
       {t.id === 'place' && t.kind === 'city' && typeSelect('city', p.catalog.cityTypes)}
-      {t.id === 'place' && t.kind === 'marker' && typeSelect('marker', p.catalog.markerTypes.map(x => ({ id: x.id, name: `${x.icon} ${x.name}` })))}
+      {t.id === 'place' && t.kind === 'marker' && typeSelect('marker', p.catalog.markerTypes)}
       {t.id === 'draw-line' && t.kind === 'route' && typeSelect('route', p.catalog.routeTypes)}
+      {t.id === 'area-new' && t.kind === 'zone' && !t.zoneType && typeSelect('zone', p.catalog.zoneTypes)}
       {(t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-island') && <BorderModeSelect kind={t.kind} />}
       {t.id === 'measure' && m && m.mode === t.mode && <span class="measure-result">{m.text}</span>}
       {(t.id === 'draw-line' || t.id === 'reshape' || t.id === 'area-new' || t.id === 'area-add' || t.id === 'area-subtract') && (

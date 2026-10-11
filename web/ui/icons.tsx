@@ -1,5 +1,6 @@
 // Line icons in the text colour, for places where an emoji would bring its own colours.
 import type { ComponentChildren } from 'preact'
+import { glyphOf, GLYPHS } from '../model/glyphs'
 
 function Svg({ children, title }: { children: ComponentChildren; title?: string }) {
   return (
@@ -78,5 +79,25 @@ export const RulerIcon = () => (
 export const CloudIcon = () => (
   <Svg>
     <path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.6 4.5 4.5 0 0 0 7 18.5z" />
+  </Svg>
+)
+
+/** the symbol of a marker type; some other text stays text */
+export function MarkerSymbol({ icon }: { icon: string | undefined }) {
+  const glyph = icon ? glyphOf(icon) : 'poi'
+  if (!glyph) return <span class="marker-symbol-text">{icon}</span>
+  return (
+    <Svg>
+      {GLYPHS[glyph].paths.map(d => (
+        <path key={d} d={d} />
+      ))}
+    </Svg>
+  )
+}
+
+export const CaveIcon = () => (
+  <Svg>
+    <path d="M2.5 20c0-8.5 4.3-14 9.5-14s9.5 5.5 9.5 14z" />
+    <path d="M8 20c0-4.4 1.8-7.5 4-7.5s4 3.1 4 7.5" />
   </Svg>
 )

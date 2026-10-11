@@ -67,6 +67,13 @@ Eine Zeitleiste hat einen **Basisstrang** und beliebig viele **abgeleitete Strä
 
 **Institutionen** (Gilden, Orden, Handelshäuser, Kirchen, Akademien, Bünde …) sind eine eigene Elementart: Art, Sitz, zugehöriger Staat, Religion, Kultur, Leitung, Mitglieder und ein freiwilliges Einflussgebiet. Wie alles andere verändern sie sich über die Zeitleiste.
 
+## Ebenen der Welt
+
+Jedes Element liegt auf einer von drei Ebenen: **Himmel**, **Oberfläche** (Vorgabe) oder **Untergrund**. Der Schalter oben links auf der Karte wählt die Ebene; die Karte zeigt nur deren Elemente, und neue Elemente landen dort. Im Inspector verschiebt „Ebene“ ein Element auf eine andere; wer ein Element aus einer Liste wählt, springt auf seine Ebene. Die gezeigte Ebene merkt sich jedes Gerät wie Jahr und Strang.
+
+- **Himmel:** Die Grundkarte liegt unter einem hellen Schleier. Die Himmelshöhe steht neben dem Schalter (Vorgabe 2.500 m, gilt fürs Projekt); Land, das höher reicht, bleibt klar und erscheint ab dieser Höhe wie auf der Oberfläche. Der Schnitt folgt dem ≈10-km-Raster der Heightmap mit weichem Rand.
+- **Untergrund:** Die Grundkarte ist abgedunkelt. „Höhle zeichnen“ in der Werkzeugleiste (nur im Untergrund) legt eine Zone vom Typ „Höhle“ an, fast deckend und hell; danach wie jede Fläche erweitern, beschneiden oder freihand zeichnen. Fehlt der Typ in einem älteren Projekt, kommt er mit der ersten Höhle dazu. Tunnel und Gänge sind Routen auf der Untergrund-Ebene.
+
 ## Projektdatei
 
 `.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Zeitleiste und Ereignisse, Typenlisten, Stile, Ebenen und Presets. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
@@ -86,6 +93,7 @@ Alle Jahre stehen in der Rechnung des Basisstrangs.
 | `.visibility` an Element, Änderung, Ereignis | `{ <Strang-ID>: { show, from?, until? } }`: in einem Strang mit `inherit: "released"` gibt `show: true` frei, in einem mit `"all"` verbirgt `show: false`. `from`/`until` sind Meilenstein-IDs |
 | Element `.begin` | erstes Jahr, in dem es besteht; fehlt: offen |
 | Element `.end` | erstes Jahr, in dem es **nicht mehr** besteht; fehlt: besteht fort |
+| Element `.level` | `"sky"` oder `"underground"`; fehlt: Oberfläche. `levels.skyAltitude`: Himmelshöhe in Metern |
 | Element `.life` | `{ <Strang-ID>: { begin, end } }`: abweichender Beginn und abweichendes Ende in einem Strang (und darunter) |
 | Element `.history` | `[{ year, set, strand?, note?, event?, from?, until?, visibility? }]`. Ab `year` gelten die Felder in `set`; `null` heißt geleert. Eine Änderung eines anderen Strangs als dem des Elements ist eine Abweichung. `from`/`until`: gilt nur zwischen diesen Meilensteinen |
 | Felder des Elements | sein Zustand vor der ersten Änderung |
@@ -156,6 +164,7 @@ Nach „Übernehmen“ lädt „Mit dem Server verknüpfen“ das aktuelle Proje
       "year": 1500,                    // Basisjahre (wie im Datenformat), null ohne Zeitleiste
       "ownYear": 12, "unit": "n. Ü.",  // so zählt der Strang
       "milestone": "ms-…", "milestoneName": "Folge 7",   // null: alle
+      "level": "surface", "skyAltitude": 2500,          // gezeigte Ebene: "sky" | "surface" | "underground"
       "layers": [{ "id": "states", "visible": true, "opacity": 1, "labels": true }, …],  // Reihenfolge von unten nach oben
       "center": [12.5, -3.2], "zoom": 4.2,                // wie der Editor (EPSG:4326)
       "extent": [-20, -15, 45, 10],                        // sichtbarer Bereich [W, S, O, N] in Grad
