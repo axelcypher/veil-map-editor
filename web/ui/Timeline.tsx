@@ -5,14 +5,15 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { confirmDialog } from '../model/actions'
 import { KIND_NAMES, newEvent, newId, newStrand, newTimeline } from '../model/project'
 import {
-  addStored, commitSource, editStrand, patchSource, project, reckoning, selection, setStrand, setYear, showHeld, source, storedEntity, strand, updateEntity, updateStored, view, year,
+  addStored, commitSource, editStrand, milestone, patchSource, project, reckoning, selection, setMilestone, setStrand, setYear, showHeld, source, storedEntity, strand, updateEntity,
+  updateStored, view, year,
 } from '../model/store'
 import {
   baseStrand, chainOf, changesOf, changeToStrand, changeYears, copyElement, editChange, elementToStrand, entityYears, eventsIn, eventToStrand, flattenAt, happeningsIn,
   heldIn, holdEntry, lifeOf, moveChange, reckoningOf, releaseElement, releaseEvent, releaseYear, removeEventFromProject, removeStrandFromProject, setVisibility, showEntry, storedStrand,
   toBaseYear, toOwnYear, visibleIn, type Reckoning,
 } from '../model/timeline'
-import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Project, type Strand, type Timeline, type WorldEvent } from '../model/types'
+import { COLLECTION, type Base, type Change, type EntityKind, type EntityRef, type Era, type Milestone, type Owned, type Project, type Strand, type Timeline, type Visibility, type WorldEvent } from '../model/types'
 import { mapView } from './mapRef'
 import { NoteLink } from './NoteLink'
 import { Color, Field, Section, Select, Swatch, Text } from './components'
@@ -107,6 +108,40 @@ export function heldWords(t: Timeline | null = source.value.timeline, id = stran
   return s.inherit === 'released'
     ? { show: 'freigeben', hold: 'Freigabe zurücknehmen', held: 'nicht freigegeben', strand: s }
     : { show: 'einblenden', hold: 'ausblenden', held: 'ausgeblendet', strand: s }
+}
+
+/** the milestone picked in the bar on purpose: releases and deviations made now hold from there on */
+const pickedMilestone = () => (typeof milestone.peek() === 'string' ? (milestone.peek() as string) : undefined)
+
+/** from … until, as two choices over the milestones; empty: open */
+function MilestoneSpan({ from, until, onChange, label }: { from?: string; until?: string; onChange: (from?: string, until?: string) => void; label: string }) {
+  const t = source.value.timeline
+  if (!t?.milestones.length) return null
+  const options = t.milestones.map(m => ({ id: m.id, name: m.name }))
+  return (
+    <span class="inline milestone-span" title={label}>
+      <span class="muted">ab</span>
+      <Select value={from ?? ''} onChange={v => onChange(v || undefined, until)} options={options} empty="—" />
+      <span class="muted">bis vor</span>
+      <Select value={until ?? ''} onChange={v => onChange(from, v || undefined)} options={options} empty="—" />
+    </span>
+  )
+}
+
+/** a release (or hiding) of an entry in the strand shown, with its stretch of milestones */
+function ReleaseSpan<T extends Owned>({ entry, update }: { entry: T; update: (edit: (x: T) => T) => void }) {
+  const t = source.value.timeline
+  const words = heldWords()
+  const v = entry.visibility?.[strand.value]
+  if (!t?.milestones.length || !words || !v) return null
+  return (
+    <MilestoneSpan
+      label={`Zwischen welchen Meilensteinen es in „${words.strand.name}“ ${v.show ? 'freigegeben' : 'ausgeblendet'} ist`}
+      from={v.from}
+      until={v.until}
+      onChange={(from, until) => update(x => setVisibility(x, strand.peek(), { show: v.show, ...(from ? { from } : {}), ...(until ? { until } : {}) } as Visibility))}
+    />
+  )
 }
 
 /** applies a release to the stored project, in the view shown */
@@ -228,6 +263,25 @@ export function TimelineBar() {
           <span>{toOwnYear(r, r.end)}</span>
         </div>
       </div>
+      {t.milestones.length > 0 && (
+        <select
+          class="tl-milestone"
+          value={milestone.value === undefined ? '' : (milestone.value ?? '*')}
+          onChange={e => {
+            const value = (e.target as HTMLSelectElement).value
+            setMilestone(value === '' ? undefined : value === '*' ? null : value)
+          }}
+          title="Stand der Erzählung: was bis zu diesem Meilenstein freigegeben ist. Ein ausdrücklich gewählter Meilenstein datiert neue Freigaben und Abweichungen."
+        >
+          <option value="">Stand: {t.milestones.find(m => m.id === t.current)?.name ?? 'alles'}</option>
+          {t.milestones.map(m => (
+            <option key={m.id} value={m.id}>
+              bis {m.name}
+            </option>
+          ))}
+          <option value="*">alles</option>
+        </select>
+      )}
       {current?.parent && (
         <button
           class={`small${showHeld.value ? ' active' : ''}`}
@@ -272,11 +326,11 @@ export function HeldInspector({ kind, entity }: { kind: EntityKind; entity: Base
         </p>
         {entity.description && <p class="muted">{entity.description}</p>}
         <div class="button-grid">
-          <button class="primary" onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, null))} title="Nur das Element mit seinem ersten Stand; spätere Änderungen bleiben zurückgehalten">
+          <button class="primary" onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, null, pickedMilestone()))} title="Nur das Element mit seinem ersten Stand; spätere Änderungen bleiben zurückgehalten">
             {words.show}
           </button>
           {later > 0 && (
-            <button onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, y))} title={`Auch die ${later} Änderungen bis ${formatYear(y, r)}`}>
+            <button onClick={() => releaseNow(p => releaseElement(p, view.peek(), entity.id, y, pickedMilestone()))} title={`Auch die ${later} Änderungen bis ${formatYear(y, r)}`}>
               mit Verlauf bis {toOwnYear(r, y)} {words.show}
             </button>
           )}
@@ -436,7 +490,7 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
   const held = words && showHeld.value ? changesOf(raw, v, stored, true).filter(c => !changes.includes(c)) : []
   const many = t.strands.length > 1
   const setChangeShown = (c: Change, show: boolean) =>
-    editStored(e => ({ ...e, history: (e.history ?? []).map(x => (x === c ? (show ? showEntry(t, x, strand.peek()) : holdEntry(t, x, strand.peek())) : x)) }))
+    editStored(e => ({ ...e, history: (e.history ?? []).map(x => (x === c ? (show ? showEntry(t, x, strand.peek(), pickedMilestone()) : holdEntry(t, x, strand.peek())) : x)) }))
   return (
     <Section title="Zeit" open>
       {many && (
@@ -455,6 +509,7 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
           />
         </p>
       )}
+      {!own && <ReleaseSpan<Base> entry={stored} update={edit => editStored(e => edit(e))} />}
       <p class={`hint time-mode${y > since ? ' dated' : ''}`}>
         {!own ? (
           <>
@@ -515,14 +570,32 @@ export function TimeSection({ kind, id }: { kind: EntityKind; id: string }) {
                 </div>
                 {many && c.strand !== stored.strand && <span class="change-strand">{mine ? 'Abweichung' : 'aus'} „{strandName(t, c.strand)}“</span>}
                 {!mine && words && (
-                  <button class="small hold" onClick={() => setChangeShown(c, false)} title={`Diese Änderung in „${words.strand.name}“ zurückhalten`}>
-                    {words.hold}
-                  </button>
+                  <span class="inline">
+                    <button class="small hold" onClick={() => setChangeShown(c, false)} title={`Diese Änderung in „${words.strand.name}“ zurückhalten`}>
+                      {words.hold}
+                    </button>
+                    <ReleaseSpan entry={c} update={edit => editStored(e => ({ ...e, history: (e.history ?? []).map(x => (x === c ? edit(x) : x)) }))} />
+                  </span>
                 )}
                 {mine ? (
                   <>
                     <input type="text" placeholder="Anlass, Grund …" value={c.note ?? ''} onInput={e => editStored(x => editChange(x, ref, ch => ({ ...ch, note: (e.target as HTMLInputElement).value || undefined })), `note-${c.year}`)} />
                     <EventSelect value={c.event} onChange={id => editStored(x => editChange(x, ref, ch => ({ ...ch, event: id || undefined })))} />
+                    {c.strand && (
+                      <MilestoneSpan
+                        label="Zwischen welchen Meilensteinen diese Abweichung gilt, z. B. bis zu ihrer Richtigstellung"
+                        from={c.from}
+                        until={c.until}
+                        onChange={(from, until) =>
+                          editStored(x =>
+                            editChange(x, ref, ch => {
+                              const { from: _f, until: _u, ...rest } = ch
+                              return { ...rest, ...(from ? { from } : {}), ...(until ? { until } : {}) }
+                            }),
+                          )
+                        }
+                      />
+                    )}
                   </>
                 ) : (
                   c.note && <span class="muted">{c.note}</span>
@@ -584,7 +657,7 @@ function YearReport({ y }: { y: number }) {
       <span class="muted">
         {held.length} {words.held}
       </span>
-      <button class="small" onClick={() => releaseNow(p => releaseYear(p, view.peek(), y))} title="Elemente, die hier entstehen, Änderungen, Beziehungen und Ereignisse dieses Jahres">
+      <button class="small" onClick={() => releaseNow(p => releaseYear(p, view.peek(), y, pickedMilestone()))} title="Elemente, die hier entstehen, Änderungen, Beziehungen und Ereignisse dieses Jahres">
         alles aus diesem Jahr {words.show}
       </button>
       {showHeld.value && (
@@ -720,10 +793,10 @@ function EventEditor({ event }: { event: WorldEvent }) {
           ) : (
             heldWords() && (
               <>
-                <button class="primary" onClick={() => setEvents(source.peek().events.map(e => (e.id === event.id ? showEntry(t, e, strand.peek()) : e)))}>
+                <button class="primary" onClick={() => setEvents(source.peek().events.map(e => (e.id === event.id ? showEntry(t, e, strand.peek(), pickedMilestone()) : e)))}>
                   {heldWords()!.show}
                 </button>
-                <button onClick={() => releaseNow(p => releaseEvent(p, view.peek(), event.id))} title="Das Ereignis und alle Änderungen, die es nennen">
+                <button onClick={() => releaseNow(p => releaseEvent(p, view.peek(), event.id, pickedMilestone()))} title="Das Ereignis und alle Änderungen, die es nennen">
                   mit seinen Änderungen {heldWords()!.show}
                 </button>
               </>
@@ -1009,6 +1082,58 @@ function StrandEditor({ s, t }: { s: Strand; t: Timeline }) {
   )
 }
 
+/** the points in the telling of the story, in order, and the one reached now */
+function Milestones({ t }: { t: Timeline }) {
+  const set = (milestones: Milestone[], merge?: string) => setTimeline({ ...t, milestones }, merge)
+  const edit = (id: string, patch: Partial<Milestone>, merge?: string) => set(t.milestones.map(m => (m.id === id ? { ...m, ...patch } : m)), merge ? `milestone-${id}-${merge}` : undefined)
+  const move = (index: number, by: number) => {
+    const list = [...t.milestones]
+    const [item] = list.splice(index, 1)
+    list.splice(index + by, 0, item)
+    set(list)
+  }
+  const remove = async (m: Milestone) => {
+    if (!(await confirmDialog(`Meilenstein „${m.name}“ löschen? Freigaben und Abweichungen, die ab oder bis zu ihm gelten, gelten danach ohne diese Grenze.`, { yes: 'Löschen' }))) return
+    setTimeline({ ...t, milestones: t.milestones.filter(x => x.id !== m.id), current: t.current === m.id ? null : t.current })
+  }
+  return (
+    <>
+      <p class="hint">
+        Stände der Erzählung, in Reihenfolge – frei benannt, z. B. Folgen, Kapitel oder Termine. Freigaben und Abweichungen können ab oder bis zu einem Meilenstein gelten; in der Leiste wählst du, welchen Stand du siehst.
+      </p>
+      {t.milestones.length > 0 && (
+        <ol class="milestone-list">
+          {t.milestones.map((m, i) => (
+            <li key={m.id}>
+              <input type="text" value={m.name} onInput={e => edit(m.id, { name: (e.target as HTMLInputElement).value }, 'name')} />
+              <input type="text" class="milestone-description" placeholder="Beschreibung" value={m.description} onInput={e => edit(m.id, { description: (e.target as HTMLInputElement).value }, 'description')} />
+              <button class="icon" title="Nach oben" disabled={i === 0} onClick={() => move(i, -1)}>
+                ↑
+              </button>
+              <button class="icon" title="Nach unten" disabled={i === t.milestones.length - 1} onClick={() => move(i, 1)}>
+                ↓
+              </button>
+              <button class="icon danger" title="Löschen" onClick={() => remove(m)}>
+                🗑
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div class="button-row">
+        <button class="small" onClick={() => set([...t.milestones, { id: newId('ms'), name: `Meilenstein ${t.milestones.length + 1}`, description: '' }])}>
+          ＋ Meilenstein
+        </button>
+      </div>
+      {t.milestones.length > 0 && (
+        <Field label="Erreichter Stand" hint="was eine Ansicht ohne eigene Wahl zeigt, auch für veil-agents">
+          <Select value={t.current ?? ''} onChange={v => setTimeline({ ...t, current: v || null })} options={t.milestones.map(m => ({ id: m.id, name: m.name }))} empty="alles" />
+        </Field>
+      )}
+    </>
+  )
+}
+
 export function TimelineSettings() {
   const raw = source.value
   const t = raw.timeline
@@ -1056,6 +1181,8 @@ export function TimelineSettings() {
           </li>
         ))}
       </ul>
+      <h4 class="subhead">Meilensteine</h4>
+      <Milestones t={t} />
       <div class="button-row">
         <button class="danger" onClick={removeTimeline}>
           Zeitleiste entfernen …

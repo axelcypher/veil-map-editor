@@ -531,3 +531,10 @@ select.strand-action { width: 52px; flex: none; padding: 1px 4px; font-size: 12p
 .held-report .year-report { flex-basis: 100%; }
 .year-report li.held { border-left-style: dashed; opacity: 0.8; }
 .event-list li.held .event-row { opacity: 0.55; font-style: italic; }
+.tl-milestone { width: auto; max-width: 170px; font-size: 12px; padding: 1px 6px; flex: none; }
+.milestone-span { flex-wrap: wrap; font-size: 12px; }
+.milestone-span select { width: auto; max-width: 120px; font-size: 12px; padding: 1px 4px; }
+.milestone-list { margin: 0 0 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.milestone-list li { display: flex; gap: 4px; align-items: center; }
+.milestone-list input[type="text"] { flex: 1; min-width: 0; }
+.milestone-list .milestone-description { flex: 2; }

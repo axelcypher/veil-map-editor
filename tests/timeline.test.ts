@@ -304,3 +304,17 @@ test('strands: releasing', async () => {
   assert.equal(showEntry(t, hidden, 'para').visibility?.para, undefined)
   assert.equal(holdEntry(t, raw.states[1], 'leser').visibility?.leser, undefined)
 })
+
+test('strands: a milestone picked on purpose dates new deviations', () => {
+  let raw: any = { ...empty, timeline: strands(), states: [setVisibility(state('A'), 'leser', { show: true })] }
+  const at2 = { strand: 'leser', milestone: 'm2' }
+  let w = resolveWorld(raw, -29000, at2)
+  raw = record(raw, w, { ...w, states: w.states.map((s: any) => ({ ...s, name: 'Später' })) }, -29000, at2)
+  assert.equal(raw.states[0].history[0].from, 'm2')
+  assert.equal(resolveWorld(raw, -29000, { strand: 'leser', milestone: 'm1' }).states[0].name, 'A')
+  assert.equal(resolveWorld(raw, -29000, at2).states[0].name, 'Später')
+  // the base strand is the truth: never dated by milestones
+  w = resolveWorld(raw, -29000, { strand: 'haupt', milestone: 'm2' })
+  raw = record(raw, w, { ...w, states: w.states.map((s: any) => ({ ...s, color: '#fff' })) }, -29000, { strand: 'haupt', milestone: 'm2' })
+  assert.equal(raw.states[0].history.find((c: any) => !c.strand).from, undefined)
+})

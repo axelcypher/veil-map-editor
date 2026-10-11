@@ -407,6 +407,8 @@ function changeIndex(history: Change[], year: number, strand: string | undefined
 }
 
 interface Writer {
+  /** new changes of a derived strand hold from this milestone on (the one picked in the view) */
+  from?: string
   c: Context
   /** the strand edited in: the last of the chain */
   strand: string
@@ -456,7 +458,9 @@ function applyEdit(raw: Item, prev: Item, next: Item, w: Writer): Item {
   }
   // a change (or, on an element of another strand, a deviation) of the strand edited in
   const history = [...(out.history ?? [])]
+  const fresh = !history.some(ch => ch.year === year && ch.strand === stored)
   const index = changeIndex(history, year, stored)
+  if (fresh && w.from) history[index] = { ...history[index], from: w.from }
   const depth = c.depth.get(strand) ?? 0
   const earlier = changesIn({ ...out, history: history.filter((_, i) => i !== index) }, c).filter(ch => ch.year < year || (ch.year === year && (c.depth.get(ch.strand ?? c.base) ?? 0) < depth))
   const before = applyChanges(out, earlier, earlier.length)
@@ -519,7 +523,9 @@ function recordDiplomacy(raw: Project, prev: Record<string, string>, next: Recor
     history = history.map(c => (c.year <= w.year && !c.strand ? { ...c, set: Object.fromEntries(Object.entries(c.set).filter(([k]) => !changed.includes(k))) } : c)).filter(c => !emptyChange(c))
     return { diplomacy, diplomacyHistory: history }
   }
+  const fresh = !history.some(ch => ch.year === w.year && ch.strand === w.stored)
   const index = changeIndex(history, w.year, w.stored)
+  if (fresh && w.from) history[index] = { ...history[index], from: w.from }
   const depth = w.c.depth.get(w.strand) ?? 0
   const counted = history.filter((ch, i) => i !== index && (ch.year < w.year || (ch.year === w.year && (w.c.depth.get(ch.strand ?? w.c.base) ?? 0) < depth)) && seen(ch, w.c))
   const before = diplomacyAt(diplomacy, counted, w.year)
@@ -546,7 +552,9 @@ export function record(raw: Project, prev: Project, next: Project, year: number 
   if (prev === raw || year == null || !t) return next
   const c = contextOf(t, view ?? { strand: baseStrand(t).id })
   const strand = c.chain[c.chain.length - 1]
-  const w: Writer = { c, strand, stored: strand === c.base ? undefined : strand, year }
+  // a milestone picked on purpose: what a derived strand changes now holds from there on
+  const from = strand !== c.base && typeof view?.milestone === 'string' ? view.milestone : undefined
+  const w: Writer = { c, strand, stored: strand === c.base ? undefined : strand, year, from }
   const out = { ...raw } as Record<string, unknown>
   const p = prev as unknown as Record<string, unknown>
   const n = next as unknown as Record<string, unknown>
