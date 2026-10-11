@@ -4,6 +4,7 @@ import { confirmDialog } from '../model/actions'
 import { dirty, project } from '../model/store'
 import { DEFAULT_SYNC_URL, configured, deleteRemote, linkProject, listRemote, newCode, openRemote, syncNow, syncSettings, syncStatus, testConnection, unlinkProject, type RemoteItem, type SyncSettings } from '../model/sync'
 import { formatInt } from '../model/geo'
+import { isViewItem, setViewShare, viewItemOf, viewShare, viewShareStatus } from '../model/viewshare'
 import { Check, Field, Modal, Section } from './components'
 import { CloudIcon } from './icons'
 
@@ -111,6 +112,12 @@ function ThisProject() {
           </>
         ) : null}
       </dl>
+      <Check checked={!!viewShare.value[p.sync.item]} onChange={on => setViewShare(p.sync!.item, on)} label="Ansicht teilen (Strang, Jahr, Ebenen, Ausschnitt)" />
+      <p class="hint">
+        Für das Stream-Overlay: Dieses Gerät legt seine Ansicht als „{viewItemOf(p.sync.item)}“ auf den Server, je Strang ein eigener Stand, der sich nur ändert, während der Strang gezeigt wird. Was davon gezeigt
+        wird, entscheidet das Overlay.
+      </p>
+      {viewShare.value[p.sync.item] && viewShareStatus.value && <p class={viewShareStatus.value.error ? 'warn-text' : 'muted'}>{viewShareStatus.value.text}</p>}
       <div class="list-actions">
         <button disabled={!ready} onClick={() => syncNow()}>
           Jetzt synchronisieren
@@ -134,7 +141,7 @@ function OnServer() {
   const load = () => {
     setError('')
     listRemote()
-      .then(setItems)
+      .then(list => setItems(list.filter(i => !isViewItem(i.name))))
       .catch(e => setError(e instanceof Error ? e.message : String(e)))
   }
   useEffect(() => {

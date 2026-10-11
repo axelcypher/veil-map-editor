@@ -138,6 +138,36 @@ Die App synchronisiert Projekte über den Dienst **veilmap-sync**, dessen Implem
 
 Nach „Übernehmen“ lädt „Mit dem Server verknüpfen“ das aktuelle Projekt hoch; auf anderen Geräten lässt es sich unter „Auf dem Server“ öffnen. Der Abgleich nutzt `GET` und `PUT` auf `/v1/items/{name}`. Schreibzugriffe nennen mit `If-Match` die zugrunde liegende Revision; bei einem veralteten Stand antwortet der Server mit HTTP `409`, damit die App den Konflikt behandeln kann. Synchronisiert werden die Projektdaten als JSON; Gelände und Bilder bleiben lokal auf jedem Gerät. Weitere Angaben zu Betrieb, Speichergrenzen und API stehen in der [Server-Dokumentation](sync-server/README.md).
 
+### Geteilte Ansicht (für das Stream-Overlay)
+
+„Datei → Synchronisierung … → Ansicht teilen“ (pro Gerät und Projekt, ab Werk aus) legt die Ansicht des Editors als eigenen Eintrag `<Projekt-Eintrag>.view` neben das Projekt, z. B. `thessari-df7afa.view`. Das Projekt selbst bleibt unberührt. Hochgeladen wird höchstens alle 0,7 s und nur, wenn sich etwas geändert hat; beim Abspielen der Zeitleiste folgt die Ansicht also mit kurzer Verzögerung. Die Liste „Auf dem Server“ zeigt diese Einträge nicht; beim Löschen eines Projekts verschwindet seine Ansicht mit.
+
+**Je Strang ein eigener Stand:** Der Stand eines Strangs ändert sich nur, solange dieser Strang im Editor gezeigt wird. Ein Leser, der nur einen Strang zeigen darf, nimmt dessen Stand und sieht nie, was in einem anderen Strang eingestellt wurde. Was ein Leser zeigt, entscheidet er selbst.
+
+```jsonc
+{
+  "format": "veil-view", "version": 1,
+  "project": "thessari-df7afa",        // der Projekt-Eintrag
+  "active": "strand-…",                // der gerade im Editor gezeigte Strang
+  "updated": 1791726092063,            // ms
+  "strands": {                         // Schlüssel: Strang-ID, "" ohne Zeitleiste
+    "strand-…": {
+      "strand": "strand-…", "strandName": "Parallelkanon",
+      "year": 1500,                    // Basisjahre (wie im Datenformat), null ohne Zeitleiste
+      "ownYear": 12, "unit": "n. Ü.",  // so zählt der Strang
+      "milestone": "ms-…", "milestoneName": "Folge 7",   // null: alle
+      "layers": [{ "id": "states", "visible": true, "opacity": 1, "labels": true }, …],  // Reihenfolge von unten nach oben
+      "center": [12.5, -3.2], "zoom": 4.2,                // wie der Editor (EPSG:4326)
+      "extent": [-20, -15, 45, 10],                        // sichtbarer Bereich [W, S, O, N] in Grad
+      "rotation": 0,                                       // Grad
+      "updated": 1791726092063
+    }
+  }
+}
+```
+
+Lesen wie das Projekt: `GET /v1/items/<Projekt-Eintrag>.view` mit `If-None-Match: "<rev>"` → `304`, solange nichts Neues da ist (`404`: noch nie geteilt). Ebenen-IDs: `relief`, `satellite`, `shade`, `coast`, `koppen`, `rivers`, `cultures`, `religions`, `states`, `provinces`, `zones`, `institutions`, `routes`, `cities`, `markers`, `regiments`, `labels`, `graticule`, `texture` und `img:<id>` für eigene Bildebenen; `labels` ist `null` bei Ebenen ohne Beschriftung.
+
 ## Globus
 
 Die 3D-Ansicht zeigt im Modus „Globus“ die Karte, das Satellitenbild oder das Relief auf der Kugel, mit Relief aus dem Höhenraster. Einstellbar sind Drehtempo und -richtung, Achsneigung, Sonne mit Tag-Nacht-Grenze, Atmosphäre, Wolken, Gradnetz und Hintergrund (transparent, Farbe, Sternenhimmel). Export: Standbild als PNG (mit Alphakanal), eine ganze Umdrehung als nahtlos loopendes GIF oder als WebM. Die Einstellungen stehen im Projekt.

@@ -88,7 +88,7 @@ export function newCode() {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_')
 }
 
-class SyncError extends Error {
+export class SyncError extends Error {
   /** HTTP status; 0 when the server was not reached */
   status: number
   body: Record<string, unknown>
@@ -99,7 +99,7 @@ class SyncError extends Error {
   }
 }
 
-async function request(path: string, init: RequestInit = {}, settings = syncSettings.peek()): Promise<Response> {
+export async function request(path: string, init: RequestInit = {}, settings = syncSettings.peek()): Promise<Response> {
   const base = settings.url.trim().replace(/\/+$/, '')
   if (!base) throw new SyncError('Keine Server-Adresse eingetragen.')
   const headers = new Headers(init.headers)
@@ -214,6 +214,8 @@ export async function deleteRemote(item: string, rev: number) {
     else notify(`Löschen fehlgeschlagen: ${describe(error)}`, 'error')
     return false
   }
+  // the shared view of the project (viewshare.ts) goes with it
+  await request(`/v1/items/${item}.view`, { method: 'DELETE', headers: { 'If-Match': '*' } }).catch(() => {})
   delete revs[item]
   writeJson(REVS_KEY, revs)
   forgetRecent(CLOUD_RECENT + item)

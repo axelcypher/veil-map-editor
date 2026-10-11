@@ -69,7 +69,7 @@ export interface MapEvents {
   pick(purpose: string, at: LonLat): void
   hover(at: LonLat | null): void
   measure(result: { mode: MeasureMode; text: string; value: number } | null): void
-  view(center: LonLat, zoom: number): void
+  view(center: LonLat, zoom: number, extent: [number, number, number, number], rotation: number): void
 }
 
 const format = new GeoJSON()
@@ -236,7 +236,8 @@ export class MapView {
     target.addEventListener('contextmenu', event => event.preventDefault())
     this.map.on('moveend', () => {
       const v = this.map.getView()
-      events.view(v.getCenter() as LonLat, v.getZoom() ?? 1)
+      const extent = v.calculateExtent(this.map.getSize()) as [number, number, number, number]
+      events.view(v.getCenter() as LonLat, v.getZoom() ?? 1, extent, (v.getRotation() * 180) / Math.PI)
     })
     this.applyProject(project)
     this.fitWorldIfDefault(project)

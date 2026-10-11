@@ -11,7 +11,6 @@ import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked
 import { changeYears } from '../model/timeline'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
-import type { LonLat } from '../model/types'
 import { Inspector } from './Inspector'
 import { LayersPanel } from './LayersPanel'
 import { Compass, measurement, ScaleBar, ToolOptions, viewInfo } from './MapChrome'
@@ -25,6 +24,7 @@ import { appDialog } from './dialogs'
 import { SyncBadge, SyncDialog } from './SyncDialog'
 import { openRemote, remoteNames, startSync } from '../model/sync'
 import { startOverview } from '../model/overview'
+import { mapFrame, startViewShare } from '../model/viewshare'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
 import { chronicleRequest, TimelineBar } from './Timeline'
@@ -314,10 +314,11 @@ function useMap(container: { current: HTMLDivElement | null }) {
       },
       hover: at => (hover.value = at),
       measure: result => (measurement.value = result),
-      view: (center: LonLat, zoom: number) => {
+      view: (center, zoom, extent, rotation) => {
         // saved with the project, but neither an undo step nor a reason to redraw
         const stored = source.peek()
         stored.view = { ...stored.view, center, zoom }
+        mapFrame.value = { center, zoom, extent, rotation }
       },
     })
     mapView.current = view
@@ -460,6 +461,7 @@ export function App() {
     })
     const stopSync = startSync()
     const stopOverview = startOverview()
+    const stopViewShare = startViewShare()
     const warn = (event: BeforeUnloadEvent) => {
       if (dirty.value) event.preventDefault()
     }
@@ -469,6 +471,7 @@ export function App() {
       stopRecovery?.()
       stopSync()
       stopOverview()
+      stopViewShare()
       window.removeEventListener('beforeunload', warn)
     }
   }, [])
