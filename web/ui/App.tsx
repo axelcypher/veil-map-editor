@@ -7,7 +7,8 @@ import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
 import { CLOUD_RECENT, confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
-import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, tool, undo, type Tool } from '../model/store'
+import { canRedo, canUndo, commit, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setYear, source, tool, undo, year, type Tool } from '../model/store'
+import { changeYears } from '../model/timeline'
 import { clipVersion, imageLayerData, koppen, satellite, terrain } from '../model/terrain'
 import { refreshVault } from '../model/obsidian'
 import type { LonLat } from '../model/types'
@@ -25,6 +26,7 @@ import { SyncBadge, SyncDialog } from './SyncDialog'
 import { openRemote, remoteNames, startSync } from '../model/sync'
 import { hover, PointInfo, StatusBar } from './StatusBar'
 import { View3D } from './View3D'
+import { chronicleRequest, TimelineBar } from './Timeline'
 import { Modal } from './components'
 
 type Panel = 'layers' | 'data' | 'style'
@@ -49,6 +51,7 @@ const TOOL_GROUPS: ToolButton[][] = [
     { icon: <CultureIcon />, name: 'Neue Kultur', tool: { id: 'area-new', kind: 'culture' } },
     { icon: '☩', name: 'Neue Religion', tool: { id: 'area-new', kind: 'religion' } },
     { icon: '▨', name: 'Neue Zone', tool: { id: 'area-new', kind: 'zone' } },
+    { icon: '⚜', name: 'Einflussgebiet einer neuen Institution', tool: { id: 'area-new', kind: 'institution' } },
   ],
   [
     { icon: 'A', name: 'Beschriftung setzen', tool: { id: 'place', kind: 'label' }, key: 't' },
@@ -312,7 +315,8 @@ function useMap(container: { current: HTMLDivElement | null }) {
       measure: result => (measurement.value = result),
       view: (center: LonLat, zoom: number) => {
         // saved with the project, but neither an undo step nor a reason to redraw
-        project.peek().view = { center, zoom }
+        const stored = source.peek()
+        stored.view = { ...stored.view, center, zoom }
       },
     })
     mapView.current = view
@@ -324,7 +328,7 @@ function useMap(container: { current: HTMLDivElement | null }) {
     const stops = [
       effect(() => view.applyProject(project.value)),
       effect(() => {
-        if (projectLoaded.value) view.fitWorldIfDefault(project.peek())
+        if (projectLoaded.value) view.fitWorldIfDefault(source.peek())
       }),
       effect(() => view.setSelection(selection.value)),
       effect(() => view.setTool(tool.value)),
@@ -386,6 +390,15 @@ function useShortcuts() {
         return
       }
       if (typing) return
+      // the timeline: to the previous or next year in which something changes
+      if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && year.value != null) {
+        event.preventDefault()
+        const years = changeYears(source.value)
+        const y = year.value
+        const next = event.key === 'ArrowRight' ? years.find(x => x > y) : [...years].reverse().find(x => x < y)
+        if (next != null) setYear(next)
+        return
+      }
       if (ctrl && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         event.shiftKey ? redo() : undo()
@@ -418,6 +431,17 @@ export function App() {
     setPanel(next)
   }
   const [overview, setOverview] = useState<OverviewId>('states')
+  // an event clicked on the timeline opens the chronicle
+  useEffect(
+    () =>
+      chronicleRequest.subscribe(n => {
+        if (!n) return
+        setPanel('data')
+        setOverview('chronicle')
+        if (compact) setDrawer(true)
+      }),
+    [compact],
+  )
   const [show3d, setShow3d] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('veil.sidebar') ?? 420))
   useMap(container)
@@ -492,6 +516,7 @@ export function App() {
         </main>
         <Inspector />
       </div>
+      <TimelineBar />
       <StatusBar />
       {show3d && <View3D onClose={() => setShow3d(false)} />}
       <Notices />

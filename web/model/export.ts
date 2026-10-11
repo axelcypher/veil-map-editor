@@ -5,9 +5,9 @@ import { cityMembership, cultureStats, provinceStats, religionStats, stateStats 
 import { areaKm2, lineLengthM } from './geo'
 import { readFrontmatter } from './obsidian'
 import { fullPath } from './routing'
-import { notify, project } from './store'
+import { notify, project, year } from './store'
 import { clippedGeometry } from './terrain'
-import type { AreaBase, Entity, EntityKind, Project } from './types'
+import { COLLECTION, type AreaBase, type Entity, type EntityKind, type Project } from './types'
 
 export interface GeoJsonOptions {
   layers: EntityKind[]
@@ -16,7 +16,7 @@ export interface GeoJsonOptions {
   perLayer: boolean
 }
 
-export const EXPORT_LAYERS: EntityKind[] = ['city', 'route', 'river', 'marker', 'label', 'state', 'province', 'culture', 'religion', 'zone', 'regiment']
+export const EXPORT_LAYERS: EntityKind[] = ['city', 'route', 'river', 'marker', 'label', 'state', 'province', 'culture', 'religion', 'zone', 'institution', 'regiment']
 
 const nameOf = (p: Project, kind: 'states' | 'cultures' | 'religions' | 'provinces' | 'cities', id: string) => (p[kind] as { id: string; name: string }[]).find(x => x.id === id)?.name ?? ''
 const typeName = (list: { id: string; name: string }[], id: string) => list.find(t => t.id === id)?.name ?? id
@@ -61,6 +61,20 @@ async function properties(p: Project, kind: EntityKind, entity: Entity, withFron
     case 'zone': {
       const x = entity as Project['zones'][number]
       Object.assign(base, { type: typeName(c.zoneTypes, x.type), color: x.color })
+      break
+    }
+    case 'institution': {
+      const x = entity as Project['institutions'][number]
+      Object.assign(base, {
+        type: typeName(c.institutionTypes, x.type),
+        color: x.color,
+        seat: nameOf(p, 'cities', x.seatId) || undefined,
+        state: nameOf(p, 'states', x.stateId) || undefined,
+        religion: nameOf(p, 'religions', x.religionId) || undefined,
+        culture: nameOf(p, 'cultures', x.cultureId) || undefined,
+        leader: x.leader || undefined,
+        members: x.members ?? undefined,
+      })
       break
     }
     case 'city': {
@@ -125,10 +139,6 @@ async function properties(p: Project, kind: EntityKind, entity: Entity, withFron
   return Object.fromEntries(Object.entries(base).filter(([, v]) => v !== undefined))
 }
 
-const COLLECTION: Record<EntityKind, keyof Project> = {
-  state: 'states', province: 'provinces', culture: 'cultures', religion: 'religions', zone: 'zones',
-  city: 'cities', route: 'routes', river: 'rivers', label: 'labels', marker: 'markers', regiment: 'regiments',
-}
 
 async function featuresOf(p: Project, kind: EntityKind, options: GeoJsonOptions) {
   const entities = p[COLLECTION[kind]] as unknown as Entity[]
@@ -151,13 +161,15 @@ function collection(p: Project, features: unknown[], name: string) {
     name,
     // degrees on the planet sphere; the same definition QGIS knows as "Thessari - geo"
     crs: { type: 'name', properties: { name: `+proj=longlat +R=${p.planetRadius} +no_defs` } },
+    // with a timeline: the world as it was in this year
+    ...(year.value != null ? { year: year.value } : {}),
     features,
   }
 }
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'karte'
 const LAYER_FILE: Record<EntityKind, string> = {
-  state: 'staaten', province: 'provinzen', culture: 'kulturen', religion: 'religionen', zone: 'zonen',
+  state: 'staaten', province: 'provinzen', culture: 'kulturen', religion: 'religionen', zone: 'zonen', institution: 'institutionen',
   city: 'staedte', route: 'routen', river: 'fluesse', label: 'beschriftungen', marker: 'marker', regiment: 'regimenter',
 }
 
@@ -207,6 +219,8 @@ export async function exportJson(target?: string) {
     exportedAt: new Date().toISOString(),
     planet: { radiusM: p.planetRadius, crs: `+proj=longlat +R=${p.planetRadius} +no_defs` },
     terrain: p.terrain ? { source: p.terrain.source, hash: p.terrain.hash, importedAt: new Date(p.terrain.importedAt).toISOString() } : null,
+    // with a timeline: the world as it was in this year, and what had happened by then
+    ...(year.value != null ? { year: year.value, events: p.events.filter(e => e.year <= year.value!).sort((a, b) => a.year - b.year) } : {}),
     ...layers,
     diplomacy: Object.entries(p.diplomacy).map(([key, relation]) => {
       const [a, b] = key.split('>')

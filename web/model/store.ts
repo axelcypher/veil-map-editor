@@ -1,11 +1,35 @@
 // Application state. The project is immutable: every change builds a new object, which makes undo
 // a list of earlier roots and lets the map see what changed by reference.
+//
+// `source` is the project as stored: every element with its dated changes. `project` is the world
+// in the year shown, what the map, the lists and all tools work on; an edit of it is written back
+// into `source` as changes in that year (see timeline.ts). Without a timeline both are the same.
 import { batch, computed, signal } from '@preact/signals'
 import { newProject } from './project'
-import { dropJunctionsTo } from './routing'
+import { record, removeFromProject, resolveWorld } from './timeline'
 import { COLLECTION, type AreaKind, type Entity, type EntityKind, type EntityMap, type Project } from './types'
 
-export const project = signal<Project>(newProject())
+export const source = signal<Project>(newProject())
+/** the year the world is shown in; null when the project has no timeline */
+export const year = signal<number | null>(null)
+export const project = computed<Project>(() => resolveWorld(source.value, year.value))
+
+/** the year in its range, or null without a timeline */
+export function clampYear(p: Project, wanted: number | null | undefined): number | null {
+  const t = p.timeline
+  if (!t) return null
+  return Math.round(Math.min(t.end, Math.max(t.start, wanted ?? t.end)))
+}
+
+/** shows the world in another year; remembered with the view, per device */
+export function setYear(wanted: number) {
+  const p = source.peek()
+  const next = clampYear(p, wanted)
+  if (next === year.peek()) return
+  // the view is no undo step and no reason to save
+  p.view = { ...p.view, year: next ?? undefined }
+  year.value = next
+}
 export const filePath = signal<string | null>(null)
 export const dirty = signal(false)
 
@@ -89,32 +113,41 @@ export const canUndo = computed(() => (historyVersion.value, past.length > 0))
 export const canRedo = computed(() => (historyVersion.value, future.length > 0))
 
 /**
- * Replace the project. `merge` folds quick successive edits of the same thing (typing into a
- * field) into one undo step.
+ * Replace the world shown: the differences are written into the stored project, in the year
+ * shown. `merge` folds quick successive edits of the same thing (typing into a field) into one
+ * undo step.
  */
 export function commit(next: Project, merge?: string) {
+  commitSource(record(source.peek(), project.peek(), next, year.peek()), merge)
+}
+
+/** replaces the stored project itself, history and all */
+export function commitSource(next: Project, merge?: string) {
   const now = Date.now()
   const merging = merge && lastMerge && lastMerge.key === merge && now - lastMerge.at < 1500
   if (!merging) {
-    past.push(project.value)
+    past.push(source.peek())
     if (past.length > 200) past.shift()
   }
   future.length = 0
   lastMerge = merge ? { key: merge, at: now } : null
   batch(() => {
-    project.value = next
+    source.value = next
+    year.value = clampYear(next, year.peek())
     dirty.value = true
     historyVersion.value++
+    fixSelection()
   })
 }
 
 export function undo() {
   const previous = past.pop()
   if (!previous) return
-  future.push(project.value)
+  future.push(source.peek())
   lastMerge = null
   batch(() => {
-    project.value = previous
+    source.value = previous
+    year.value = clampYear(previous, year.peek())
     dirty.value = true
     historyVersion.value++
     fixSelection()
@@ -124,10 +157,11 @@ export function undo() {
 export function redo() {
   const next = future.pop()
   if (!next) return
-  past.push(project.value)
+  past.push(source.peek())
   lastMerge = null
   batch(() => {
-    project.value = next
+    source.value = next
+    year.value = clampYear(next, year.peek())
     dirty.value = true
     historyVersion.value++
     fixSelection()
@@ -143,7 +177,8 @@ export function resetProject(next: Project, path: string | null) {
   future.length = 0
   lastMerge = null
   batch(() => {
-    project.value = next
+    source.value = next
+    year.value = clampYear(next, next.view.year)
     filePath.value = path
     dirty.value = false
     selection.value = null
@@ -154,9 +189,11 @@ export function resetProject(next: Project, path: string | null) {
 }
 
 function fixSelection() {
-  const s = selection.value
+  const s = selection.peek()
   if (s && !findEntity(s.kind, s.id)) selection.value = null
 }
+// an element that does not exist in the year now shown is no longer selected
+year.subscribe(() => fixSelection())
 
 export function list<K extends EntityKind>(kind: K, p: Project = project.value): EntityMap[K][] {
   return p[COLLECTION[kind]] as unknown as EntityMap[K][]
@@ -196,37 +233,26 @@ export function updateMany<K extends EntityKind>(kind: K, patches: Map<string, P
   commit(withList(project.value, kind, items))
 }
 
+/**
+ * Deletes an element for good, in every year, with every reference to it (loose references are
+ * cleared, never left dangling). To let it end in a year, set its `end` instead.
+ */
 export function removeEntity(kind: EntityKind, id: string) {
-  let next = withList(project.value, kind, list(kind).filter(e => e.id !== id))
-  // loose references are cleared, never left dangling
-  if (kind === 'state') {
-    next = {
-      ...next,
-      provinces: next.provinces.map(p => (p.stateId === id ? { ...p, stateId: '' } : p)),
-      regiments: next.regiments.map(r => (r.stateId === id ? { ...r, stateId: '' } : r)),
-      diplomacy: Object.fromEntries(Object.entries(next.diplomacy).filter(([key]) => !key.split('>').includes(id))),
-    }
-  }
-  if (kind === 'city') {
-    next = {
-      ...next,
-      states: next.states.map(s => (s.capitalId === id ? { ...s, capitalId: '' } : s)),
-      provinces: next.provinces.map(p => (p.capitalId === id ? { ...p, capitalId: '' } : p)),
-    }
-  }
-  if (kind === 'culture' || kind === 'religion') {
-    const field = kind === 'culture' ? 'cultureId' : 'religionId'
-    const key = kind === 'culture' ? 'cultures' : 'religions'
-    next = {
-      ...next,
-      states: next.states.map(s => (s[field] === id ? { ...s, [field]: '' } : s)),
-      [key]: (next[key] as { id: string; origins: string[] }[]).map(c => ({ ...c, origins: c.origins.filter(o => o !== id) })),
-    }
-  }
-  if (kind === 'river') next = { ...next, rivers: next.rivers.map(r => (r.parentId === id ? { ...r, parentId: '' } : r)) }
-  if (kind === 'route') next = { ...next, routes: dropJunctionsTo(next.routes, id) }
-  commit(next)
+  commitSource(removeFromProject(source.peek(), kind, id))
   if (selection.value?.id === id) selection.value = null
+}
+
+/** the stored element (with its whole history), not the one of the year shown */
+export const storedEntity = <K extends EntityKind>(kind: K, id: string) => list(kind, source.value).find(e => e.id === id)
+
+/** changes the stored element itself: its history, its life span */
+export function updateStored<K extends EntityKind>(kind: K, id: string, edit: (e: EntityMap[K]) => EntityMap[K], merge?: string) {
+  const p = source.peek()
+  commitSource(withList(p, kind, list(kind, p).map(e => (e.id === id ? edit(e) : e))), merge ? `stored:${kind}:${id}:${merge}` : undefined)
+}
+
+export function patchSource(patch: Partial<Project>, merge?: string) {
+  commitSource({ ...source.peek(), ...patch }, merge)
 }
 
 export function patchProject(patch: Partial<Project>, merge?: string) {

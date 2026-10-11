@@ -4,7 +4,7 @@
 import { effect, signal } from '@preact/signals'
 import { adoptProject, CLOUD_RECENT, confirmDialog, forgetRecent, reloadChangedRasters, rememberRecent } from './actions'
 import { parseProject, serializeProject } from './project'
-import { commit, notify, patchProject, project } from './store'
+import { commitSource, notify, patchSource, source } from './store'
 import type { Project } from './types'
 
 export interface SyncSettings {
@@ -160,19 +160,19 @@ function slug(name: string) {
 
 /** uploads the open project as a new item and keeps it in step from now on */
 export async function linkProject() {
-  const item = slug(project.peek().name)
-  patchProject({ sync: { item } })
-  const json = syncJson(project.peek())
+  const item = slug(source.peek().name)
+  patchSource({ sync: { item } })
+  const json = syncJson(source.peek())
   try {
     const response = await request(`/v1/items/${item}`, { method: 'PUT', headers: { 'If-Match': '"0"', 'Content-Type': 'application/json' }, body: json })
     const meta = (await response.json()) as { rev: number }
     setRev(item, meta.rev)
     exchanged = { item, json }
     setStatus('idle', 'Synchronisiert', meta.rev)
-    remember(item, project.peek().name)
+    remember(item, source.peek().name)
     notify('Projekt liegt jetzt auf dem Sync-Server.', 'ok')
   } catch (error) {
-    patchProject({ sync: null })
+    patchSource({ sync: null })
     setStatus('error', describe(error))
     notify(`Verknüpfen fehlgeschlagen: ${describe(error)}`, 'error')
   }
@@ -180,7 +180,7 @@ export async function linkProject() {
 
 export function unlinkProject() {
   exchanged = null
-  patchProject({ sync: null })
+  patchSource({ sync: null })
   setStatus('off', 'Nicht verbunden')
 }
 
@@ -194,7 +194,7 @@ export async function openRemote(item: string) {
     // known before the project changes, so the check that follows the switch finds it current
     setRev(item, rev)
     await adoptProject(next, null)
-    exchanged = { item, json: syncJson(project.peek()) }
+    exchanged = { item, json: syncJson(source.peek()) }
     setStatus('idle', 'Synchronisiert', rev)
     remember(item, next.name)
   } catch (error) {
@@ -217,7 +217,7 @@ export async function deleteRemote(item: string, rev: number) {
   delete revs[item]
   writeJson(REVS_KEY, revs)
   forgetRecent(CLOUD_RECENT + item)
-  if (project.peek().sync?.item === item) unlinkProject()
+  if (source.peek().sync?.item === item) unlinkProject()
   notify('Vom Server gelöscht.', 'ok')
   return true
 }
@@ -228,14 +228,14 @@ function setStatus(state: SyncState, text: string, rev?: number) {
 
 /** takes over the server's state: an undo step, so it can be taken back */
 async function applyRemote(item: string, text: string, rev: number) {
-  const before = project.peek()
+  const before = source.peek()
   const next = parseProject(text)
   next.sync = { item }
   // the view is local to each device
   next.view = before.view
-  commit(next)
+  commitSource(next)
   setRev(item, rev)
-  exchanged = { item, json: syncJson(project.peek()) }
+  exchanged = { item, json: syncJson(source.peek()) }
   setStatus('idle', 'Synchronisiert', rev)
   await reloadChangedRasters(before, next)
 }
@@ -247,7 +247,7 @@ async function resolveConflict(item: string, remoteText: string, remoteRev: numb
   const when = updated ? new Date(updated).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'unbekannt'
   try {
     const takeServer = await confirmDialog(
-      `Auf dem Server liegt ein anderer Stand von „${project.peek().name}“ (Revision ${remoteRev}, ${when}), und hier gibt es Änderungen, die noch nicht hochgeladen sind. Welcher Stand soll bleiben? Der andere ist danach über Rückgängig bzw. die Server-Historie noch erreichbar.`,
+      `Auf dem Server liegt ein anderer Stand von „${source.peek().name}“ (Revision ${remoteRev}, ${when}), und hier gibt es Änderungen, die noch nicht hochgeladen sind. Welcher Stand soll bleiben? Der andere ist danach über Rückgängig bzw. die Server-Historie noch erreichbar.`,
       { title: 'Synchronisierung', yes: 'Server-Stand übernehmen', no: 'Meinen Stand behalten' },
     )
     if (takeServer) await applyRemote(item, remoteText, remoteRev)
@@ -265,7 +265,7 @@ async function resolveConflict(item: string, remoteText: string, remoteRev: numb
 
 /** uploads local changes, building on the revision last seen */
 async function push() {
-  const p = project.peek()
+  const p = source.peek()
   const item = itemOf(p)
   if (!item || !configured() || conflictOpen) return
   const json = syncJson(p)
@@ -293,7 +293,7 @@ async function push() {
 
 /** fetches a newer server state; `force` reads it even when the revision looks current */
 async function pull(force = false) {
-  const p = project.peek()
+  const p = source.peek()
   const item = itemOf(p)
   if (!item || !configured() || conflictOpen) return
   const known = revs[item]
@@ -309,7 +309,7 @@ async function pull(force = false) {
     // the server has nothing newer than what this device builds on: local changes simply go up
     if (known !== undefined && rev <= known) return
     const updated = Number(response.headers.get('x-updated') ?? 0) || null
-    const local = syncJson(project.peek())
+    const local = syncJson(source.peek())
     const remote = syncJson({ ...parseProject(text), sync: { item } })
     if (remote === local) {
       setRev(item, rev)
@@ -347,7 +347,7 @@ export function startSync() {
   let timer = 0
   let item: string | null = null
   const stopEffect = effect(() => {
-    const p = project.value
+    const p = source.value
     const s = syncSettings.value
     const current = itemOf(p)
     if (current !== item) {

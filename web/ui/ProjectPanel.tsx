@@ -1,6 +1,7 @@
 // Project settings, the three imports (heightmap, rivers, climate), control points, the Obsidian
 // vault and the exports.
 import { useState } from 'preact/hooks'
+import { TimelineSettings } from './Timeline'
 import { IMAGE_FILTER, importImageLayer, importKoppen, importRivers, importSatellite, importTerrain, lastArchive, lastReport, removeImageLayer, saveArchive } from '../model/actions'
 import { EXPORT_LAYERS, exportGeoJson, exportJson } from '../model/export'
 import { formatInt, formatLonLat } from '../model/geo'
@@ -535,6 +536,9 @@ export function ProjectPanel() {
           </Section>
         </>
       )}
+      <Section title="Zeitleiste" open={!!p.timeline}>
+        <TimelineSettings />
+      </Section>
       <Section title="Obsidian" open={false}>
         <Obsidian />
       </Section>

@@ -10,7 +10,7 @@ import Point from 'ol/geom/Point'
 import Polygon from 'ol/geom/Polygon'
 import { Circle, Fill, Icon, RegularShape, Stroke, Style, Text } from 'ol/style'
 import { fullPath } from '../model/routing'
-import type { City, Entity, EntityKind, Label, LayerStyle, Marker, Project, Regiment, River, Route, Zone, ZonePattern } from '../model/types'
+import { COLLECTION, type City, type Entity, type EntityKind, type Label, type LayerStyle, type Marker, type Project, type Regiment, type River, type Route, type Zone, type ZonePattern } from '../model/types'
 
 export const SELECT_COLOR = '#f2b134'
 
@@ -213,8 +213,8 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
     if (!entity) return undefined
     const ctx = getContext()
     const selected = ctx.selectedId === entity.id
-    const layerId = kind === 'state' ? 'states' : kind === 'province' ? 'provinces' : kind === 'culture' ? 'cultures' : kind === 'religion' ? 'religions' : kind === 'zone' ? 'zones' : kind === 'city' ? 'cities' : kind === 'route' ? 'routes' : kind === 'river' ? 'rivers' : kind === 'label' ? 'labels' : kind === 'marker' ? 'markers' : 'regiments'
-    const s = ctx.project.style[layerId]
+    // each element layer is named like its list
+    const s = ctx.project.style[COLLECTION[kind]]
     // world view hides small places and their names
     const bucket = resolution > 0.25 ? 0 : resolution > 0.06 ? 1 : 2
     const key = `${selected}|${bucket}|${styleVersion()}|${ctx.diplomacyColors?.get(entity.id) ?? ''}`
@@ -228,6 +228,7 @@ export function entityStyle(kind: EntityKind, getContext: () => StyleContext, st
       case 'culture':
       case 'religion':
       case 'zone':
+      case 'institution':
         styles = areaStyles(kind, entity as Entity & { color: string }, s, ctx, selected)
         break
       case 'city': {

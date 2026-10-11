@@ -7,7 +7,7 @@ import { koppen } from '../model/terrain'
 import type { BuiltinLayerId, Catalog, LayerStyle, Project } from '../model/types'
 import { Check, Color, Field, Num, PresetPicker, Section, Select, Text } from './components'
 
-const STYLED: BuiltinLayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
+const STYLED: BuiltinLayerId[] = ['coast', 'states', 'provinces', 'cultures', 'religions', 'zones', 'institutions', 'rivers', 'routes', 'cities', 'markers', 'regiments', 'labels']
 const FONTS = [
   { id: '"Cinzel", serif', name: 'Cinzel' },
   { id: '"Forum", serif', name: 'Forum' },
@@ -28,7 +28,7 @@ function LayerStyleEditor({ id }: { id: BuiltinLayerId }) {
   const s = p.style[id]
   const set = (patch: Partial<LayerStyle>, key: string) => patchProject({ style: { ...p.style, [id]: { ...s, ...patch } } }, `style-${id}-${key}`)
   const lines = id !== 'cities' && id !== 'markers' && id !== 'regiments' && id !== 'labels'
-  const fills = id === 'coast' || id === 'states' || id === 'provinces' || id === 'cultures' || id === 'religions' || id === 'zones' || id === 'cities'
+  const fills = id === 'coast' || id === 'states' || id === 'provinces' || id === 'cultures' || id === 'religions' || id === 'zones' || id === 'institutions' || id === 'cities'
   const symbols = id === 'cities' || id === 'markers' || id === 'regiments' || id === 'labels' || id === 'routes'
   return (
     <div class="style-editor">
@@ -195,6 +195,16 @@ const LISTS: { key: ListKey; name: string; columns: ColumnDef[]; blank: () => Re
   { key: 'stateForms', name: 'Staatsformen', columns: [{ key: 'name', name: 'Name', kind: 'text' }], blank: () => ({ name: 'Neue Staatsform' }) },
   { key: 'cultureTypes', name: 'Kulturtypen', columns: [{ key: 'name', name: 'Name', kind: 'text' }], blank: () => ({ name: 'Neuer Typ' }) },
   { key: 'religionTypes', name: 'Religionstypen', columns: [{ key: 'name', name: 'Name', kind: 'text' }], blank: () => ({ name: 'Neuer Typ' }) },
+  { key: 'institutionTypes', name: 'Arten von Institutionen', columns: [{ key: 'name', name: 'Name', kind: 'text' }], blank: () => ({ name: 'Neue Art' }) },
+  {
+    key: 'eventTypes',
+    name: 'Arten von Ereignissen',
+    columns: [
+      { key: 'name', name: 'Name', kind: 'text' },
+      { key: 'color', name: 'Farbe', kind: 'color' },
+    ],
+    blank: () => ({ name: 'Neue Art', color: '#9e9e9e' }),
+  },
   {
     key: 'relations',
     name: 'Diplomatische Beziehungen',

@@ -6,11 +6,24 @@ export interface LineGeometry { type: 'LineString'; coordinates: LonLat[] }
 export interface AreaGeometry { type: 'MultiPolygon'; coordinates: LonLat[][][] }
 
 export type EntityKind =
-  | 'state' | 'province' | 'culture' | 'religion' | 'zone'
+  | 'state' | 'province' | 'culture' | 'religion' | 'zone' | 'institution'
   | 'city' | 'route' | 'river' | 'label' | 'marker' | 'regiment'
 
-export const AREA_KINDS = ['state', 'province', 'culture', 'religion', 'zone'] as const
+export const AREA_KINDS = ['state', 'province', 'culture', 'religion', 'zone', 'institution'] as const
 export type AreaKind = (typeof AREA_KINDS)[number]
+
+/**
+ * A dated change of an element: from `year` on, the fields in `set` hold, until a later change
+ * sets them again. A field set to null was emptied.
+ */
+export interface Change {
+  year: number
+  set: Record<string, unknown>
+  /** why it changed, free text */
+  note?: string
+  /** id of the event the change belongs to */
+  event?: string
+}
 
 export interface Base {
   id: string
@@ -19,6 +32,12 @@ export interface Base {
   description: string
   /** vault-relative path of the linked Obsidian note, '' when none */
   note: string
+  /** first year the element exists; absent: since the start of the timeline */
+  begin?: number
+  /** first year it no longer exists; absent: it still does */
+  end?: number
+  /** its changes, oldest first; the fields of the element itself hold before the first one */
+  history?: Change[]
 }
 
 export interface AreaBase extends Base {
@@ -64,6 +83,21 @@ export interface Zone extends AreaBase {
   type: string
   pattern: ZonePattern
   opacity: number
+}
+
+/** a guild, order, trading house, church, academy …: may have an area of influence */
+export interface Institution extends AreaBase {
+  type: string
+  /** the city it sits in */
+  seatId: string
+  /** the state it belongs to or serves */
+  stateId: string
+  religionId: string
+  cultureId: string
+  /** who leads it */
+  leader: string
+  /** members, null: unknown */
+  members: number | null
 }
 
 export interface CityFeatures {
@@ -135,6 +169,7 @@ export interface EntityMap {
   culture: Culture
   religion: Religion
   zone: Zone
+  institution: Institution
   city: City
   route: Route
   river: River
@@ -150,6 +185,7 @@ export const COLLECTION = {
   culture: 'cultures',
   religion: 'religions',
   zone: 'zones',
+  institution: 'institutions',
   city: 'cities',
   route: 'routes',
   river: 'rivers',
@@ -271,6 +307,7 @@ export interface ZoneType extends NamedType { color: string; pattern: ZonePatter
 export interface LabelCategory extends NamedType { size: number; color: string; italic: boolean; uppercase: boolean; spacing: number; font: string }
 export interface UnitType extends NamedType { symbol: string; naval: boolean }
 export interface Relation extends NamedType { color: string; mirror: string }
+export interface EventType extends NamedType { color: string }
 
 export interface Catalog {
   cityTypes: CityType[]
@@ -283,6 +320,8 @@ export interface Catalog {
   labelCategories: LabelCategory[]
   unitTypes: UnitType[]
   relations: Relation[]
+  institutionTypes: NamedType[]
+  eventTypes: EventType[]
 }
 
 export interface LayerStyle {
@@ -302,7 +341,7 @@ export interface LayerStyle {
 }
 
 export type BuiltinLayerId =
-  | 'relief' | 'satellite' | 'shade' | 'coast' | 'koppen' | 'rivers' | 'cultures' | 'religions' | 'states' | 'provinces' | 'zones'
+  | 'relief' | 'satellite' | 'shade' | 'coast' | 'koppen' | 'rivers' | 'cultures' | 'religions' | 'states' | 'provinces' | 'zones' | 'institutions'
   | 'routes' | 'cities' | 'markers' | 'regiments' | 'labels' | 'graticule' | 'texture'
 /** an own image layer: "img:" and the id of its tile cache */
 export type ImageLayerId = `img:${string}`
@@ -363,6 +402,44 @@ export interface ImageLayerRef {
   importedAt: number
 }
 
+/** a named stretch of the world's history, from its start year to the start of the next */
+export interface Era {
+  id: string
+  name: string
+  start: number
+  color: string
+}
+
+/** years are whole numbers in the world's own reckoning */
+export interface Timeline {
+  /** the first year on record: what has no own begin exists from here */
+  start: number
+  /** the last year the bar shows */
+  end: number
+  /** shown after a year, e.g. "n. Ü." */
+  unit: string
+  eras: Era[]
+}
+
+export interface EntityRef {
+  kind: EntityKind
+  id: string
+}
+
+/** something that happened: a war, a treaty, a founding; may last several years */
+export interface WorldEvent {
+  id: string
+  name: string
+  year: number
+  /** last year of a lasting event; null: a single year */
+  until: number | null
+  type: string
+  description: string
+  note: string
+  /** the elements it concerns */
+  refs: EntityRef[]
+}
+
 export interface Project {
   format: 'veil-project'
   version: 1
@@ -383,6 +460,7 @@ export interface Project {
   cultures: Culture[]
   religions: Religion[]
   zones: Zone[]
+  institutions: Institution[]
   cities: City[]
   routes: Route[]
   rivers: River[]
@@ -391,6 +469,11 @@ export interface Project {
   regiments: Regiment[]
   /** "a>b" → relation id, a's view of b */
   diplomacy: Record<string, string>
+  /** dated changes of the diplomacy; '' in `set` removes a relation */
+  diplomacyHistory: Change[]
+  /** null: the project has no timeline, everything is timeless */
+  timeline: Timeline | null
+  events: WorldEvent[]
   catalog: Catalog
   style: Record<BuiltinLayerId, LayerStyle>
   layers: LayerSetting[]
@@ -400,5 +483,6 @@ export interface Project {
   obsidian: { vaultPath: string; vaultName: string }
   archive: ArchiveOptions
   globe: GlobeOptions
-  view: { center: LonLat; zoom: number }
+  /** per device: where the map looks and which year it shows */
+  view: { center: LonLat; zoom: number; year?: number }
 }

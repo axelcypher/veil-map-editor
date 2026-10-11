@@ -1,6 +1,6 @@
 // Creating, reading and writing projects, and new elements with sensible defaults.
 import { defaultCatalog, defaultDisplay, defaultKoppenClasses, defaultLayers, defaultStyle } from './catalog'
-import type { City, Culture, EntityKind, EntityMap, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Zone } from './types'
+import type { City, Culture, EntityKind, EntityMap, Institution, Label, LonLat, Marker, Project, Province, Regiment, Religion, Route, State, Timeline, WorldEvent, Zone } from './types'
 
 export const PLANET_RADIUS = 6_606_727
 
@@ -25,6 +25,7 @@ export function newProject(): Project {
     cultures: [],
     religions: [],
     zones: [],
+    institutions: [],
     cities: [],
     routes: [],
     rivers: [],
@@ -32,6 +33,9 @@ export function newProject(): Project {
     markers: [],
     regiments: [],
     diplomacy: {},
+    diplomacyHistory: [],
+    timeline: null,
+    events: [],
     catalog: defaultCatalog(),
     style: defaultStyle(),
     layers: defaultLayers(),
@@ -120,6 +124,19 @@ export const create = {
       opacity: 0.35,
     }
   },
+  institution: (p: Project): Institution => ({
+    ...base('inst', `Institution ${p.institutions.length + 1}`),
+    color: nextColor(p.institutions.length + 11),
+    geometry: null,
+    clip: false,
+    type: p.catalog.institutionTypes[0]?.id ?? '',
+    seatId: '',
+    stateId: '',
+    religionId: '',
+    cultureId: '',
+    leader: '',
+    members: null,
+  }),
   city: (p: Project, at: LonLat): City => ({
     ...base('city', `Stadt ${p.cities.length + 1}`),
     geometry: { type: 'Point', coordinates: at },
@@ -167,6 +184,7 @@ export const KIND_NAMES: Record<EntityKind, [string, string]> = {
   culture: ['Kultur', 'Kulturen'],
   religion: ['Religion', 'Religionen'],
   zone: ['Zone', 'Zonen'],
+  institution: ['Institution', 'Institutionen'],
   city: ['Stadt', 'Städte'],
   route: ['Route', 'Routen'],
   river: ['Fluss', 'Flüsse'],
@@ -174,6 +192,19 @@ export const KIND_NAMES: Record<EntityKind, [string, string]> = {
   marker: ['Marker', 'Marker'],
   regiment: ['Regiment', 'Regimenter'],
 }
+
+export const newTimeline = (start: number, end: number, unit = ''): Timeline => ({ start, end: Math.max(start + 1, end), unit, eras: [] })
+
+export const newEvent = (p: Project, year: number): WorldEvent => ({
+  id: newId('event'),
+  name: `Ereignis ${p.events.length + 1}`,
+  year,
+  until: null,
+  type: p.catalog.eventTypes[0]?.id ?? '',
+  description: '',
+  note: '',
+  refs: [],
+})
 
 /** fills in everything a file from an older or hand-edited version lacks */
 export function parseProject(text: string): Project {

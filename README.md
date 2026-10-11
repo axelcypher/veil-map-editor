@@ -1,6 +1,6 @@
 # VEIL Map Editor
 
-Supplement-Editor für die Weltkarte von Thessari: Städte, Routen, Staaten, Provinzen, Kulturen, Religionen, Zonen, Marker, Beschriftungen, Militär und Diplomatie auf einer fertigen Karte. Tauri-Desktop-App, die Logik liegt vollständig im Frontend (`web/`).
+Supplement-Editor für die Weltkarte von Thessari: Städte, Routen, Staaten, Provinzen, Kulturen, Religionen, Institutionen, Zonen, Marker, Beschriftungen, Militär und Diplomatie auf einer fertigen Karte – und wie sie sich über die Zeit entwickeln. Tauri-Desktop-App, die Logik liegt vollständig im Frontend (`web/`).
 
 **Datenfluss:** PS-Heightmap → Gaea → Veil-Editor → GeoJSON + Zusatzinfos → GPlates
 
@@ -39,9 +39,44 @@ Ein Farbexport aus Gaea (2:1, bei quadratischem Export die Mitte ausschneiden) w
 
 Unter „Projekt → Bildebenen“ lassen sich beliebig viele weitere Bilder der ganzen Welt als eigene Ebenen hinzuladen, etwa vorgerenderte Kartenstile. Sie werden wie das Satellitenbild gekachelt (2:1, bei quadratischem Export die Mitte ausschneiden). Transparenz bleibt erhalten, sodass auch eine Ebene nur mit Grenzen oder Schrift darüber liegen kann. Reihenfolge, Deckkraft und Filter stehen unter „Ebenen“; der Globus kann jede Bildebene als Oberfläche tragen. Im Archiv reisen sie mit (abwählbar).
 
+## Zeitleiste
+
+Die Welt wird aus der Ferne beobachtet und verändert sich: Reiche entstehen und zerfallen, Provinzen wechseln den Besitzer, Städte wachsen, Bündnisse werden zu Kriegen. Mit einer Zeitleiste hält der Editor das fest.
+
+- **Anlegen:** „Daten → Chronik“ oder „Projekteinstellungen → Zeitleiste“: erstes und letztes Jahr, optional ein Zusatz hinter jeder Jahreszahl (z. B. „n. Ü.“). Alles, was schon da ist, gilt ab dem ersten Jahr.
+- **Jahr wählen:** die Leiste unter der Karte. ⏮ und ⏭ (oder Alt+← / Alt+→) springen zum vorigen bzw. nächsten Jahr, in dem sich etwas ändert; ▶ spielt diese Jahre nacheinander ab. Striche markieren Jahre mit Änderungen (hell: die des gewählten Elements), farbige Marken die Ereignisse, Bänder die Epochen.
+- **Bearbeiten:** Karte, Listen und alle Werkzeuge zeigen die Welt im gewählten Jahr. Was dort geändert wird – Name, Grenze, Besitzer, Hauptstadt, Einwohner, Diplomatie, alles –, gilt **ab diesem Jahr**; frühere Jahre bleiben, wie sie waren. Im ersten Jahr eines Elements ändert man seinen Grundzustand. Der Inspector zeigt im Kopf „Änderung ab …“, wenn eine Bearbeitung datiert wird.
+- **Entstehen und Enden:** Neue Elemente beginnen im Jahr, in dem sie angelegt werden. Unter „Zeit“ im Inspector stehen „Besteht seit“ und „Endet“ (ab diesem Jahr nicht mehr da). Löschen entfernt ein Element dagegen in allen Jahren.
+- **Verlauf:** Der Inspector listet die Änderungen eines Elements mit Jahr; jede lässt sich anspringen, verschieben, löschen und mit Anlass und Ereignis versehen.
+- **Chronik:** „Daten → Chronik“ zeigt, was im gezeigten Jahr geschieht (entsteht, endet, ändert sich, Beziehungen), und die Ereignisse mit Jahr, Dauer, Art, Beschreibung, betroffenen Elementen und Obsidian-Note.
+- **Epochen** benennen Zeitabschnitte (Projekteinstellungen → Zeitleiste).
+- **Export:** GeoJSON und JSON zeigen die Welt im gewählten Jahr (mit Feld `year`).
+
+**Institutionen** (Gilden, Orden, Handelshäuser, Kirchen, Akademien, Bünde …) sind eine eigene Elementart: Art, Sitz, zugehöriger Staat, Religion, Kultur, Leitung, Mitglieder und ein freiwilliges Einflussgebiet. Wie alles andere verändern sie sich über die Zeitleiste.
+
 ## Projektdatei
 
-`.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Typenlisten, Stile, Ebenen und Presets, Vault-Pfad. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
+`.veil` ist JSON: Planetenradius, Verweise auf die importierten Dateien (Pfad und Hash), Kontrollpunkte, alle Elemente mit GeoJSON-Geometrie in Grad, Diplomatie, Zeitleiste und Ereignisse, Typenlisten, Stile, Ebenen und Presets, Vault-Pfad. Flächen werden so gespeichert, wie sie gezeichnet wurden; der Zuschnitt an der Küste wird bei der Anzeige und beim Export berechnet und folgt so jedem neuen Gelände.
+
+### Zeitleiste im Datenformat
+
+Für Programme, die das Projekt lesen, etwa vom Sync-Server (veil-agents). Jahre sind ganze Zahlen in der Zeitrechnung der Welt.
+
+| Feld | Bedeutung |
+| --- | --- |
+| `timeline` | `null` ohne Zeitleiste, sonst `{ start, end, unit, eras: [{ id, name, start, color }] }` |
+| Element `.begin` | erstes Jahr, in dem es besteht; fehlt: seit `timeline.start` |
+| Element `.end` | erstes Jahr, in dem es **nicht mehr** besteht; fehlt: besteht fort |
+| Element `.history` | `[{ year, set, note?, event? }]`, aufsteigend nach Jahr. Ab `year` gelten die Felder in `set`; `null` heißt geleert |
+| Felder des Elements | sein Zustand vor der ersten Änderung |
+| `diplomacy` | Beziehungen vor der ersten Änderung: `"a>b"` → Beziehungs-ID (Sicht von a auf b) |
+| `diplomacyHistory` | `[{ year, set }]` wie oben; `""` in `set` hebt eine Beziehung auf |
+| `events` | `[{ id, name, year, until, type, description, note, refs: [{ kind, id }] }]`; `until` ist das letzte Jahr oder `null` |
+| `catalog.eventTypes`, `catalog.institutionTypes` | Arten von Ereignissen (mit Farbe) und Institutionen |
+
+Die Welt im Jahr *J*: Ein Element besteht, wenn `begin ≤ J < end` (fehlende Grenzen gelten als offen). Sein Zustand sind seine eigenen Felder, darüber der Reihe nach die `set` aller Änderungen mit `year ≤ J`. Die Diplomatie genauso. [`web/model/timeline.ts`](web/model/timeline.ts) macht genau das und hängt nur von Typen ab, lässt sich also übernehmen: `resolveWorld(project, J)` liefert das ganze Projekt im Jahr *J*, `entityAt(element, J)` ein einzelnes Element, `diplomacyAt(…)` die Beziehungen, `happeningsIn(project, J)` was in einem Jahr geschieht.
+
+Listen der Elemente: `states`, `provinces`, `cultures`, `religions`, `zones`, `institutions`, `cities`, `routes`, `rivers`, `labels`, `markers`, `regiments`.
 
 ## Archiv `.veilmap`
 
@@ -87,7 +122,7 @@ npm install
 npm run tauri dev
 ```
 
-Rust-Tests: `cargo test --lib` in `src-tauri`. Die Probeläufe gegen echte Dateien sind mit `--ignored` abrufbar (siehe `src-tauri/src/probe_tests.rs`).
+Tests der Zeitleiste: `npm test`. Rust-Tests: `cargo test --lib` in `src-tauri`. Die Probeläufe gegen echte Dateien sind mit `--ignored` abrufbar (siehe `src-tauri/src/probe_tests.rs`).
 
 ## Android
 

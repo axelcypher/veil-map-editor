@@ -4,14 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { conflicts, findConflicts } from '../model/actions'
 import { cityMembership, cultureStats, militaryTotals, provinceStats, religionStats, stateStats } from '../model/derive'
 import { formatInt, lineLengthM } from '../model/geo'
-import { KIND_NAMES } from '../model/project'
+import { create, KIND_NAMES } from '../model/project'
 import { fullPath } from '../model/routing'
-import { list, patchProject, project, selection, tool } from '../model/store'
+import { addEntity, list, patchProject, project, selection, source, tool } from '../model/store'
+import { Chronicle } from './Timeline'
 import { AREA_KINDS, type AreaKind, type EntityKind, type Project } from '../model/types'
 import { mapView } from './mapRef'
 import { Section, Swatch, Table, Tabs, type Column } from './components'
 
-export type OverviewId = 'states' | 'cultures' | 'religions' | 'zones' | 'cities' | 'routes' | 'rivers' | 'markers' | 'labels' | 'charts' | 'conflicts'
+export type OverviewId = 'chronicle' | 'states' | 'cultures' | 'religions' | 'zones' | 'institutions' | 'cities' | 'routes' | 'rivers' | 'markers' | 'labels' | 'charts' | 'conflicts'
 
 const pick = (kind: EntityKind, id: string) => {
   selection.value = { kind, id }
@@ -28,6 +29,15 @@ function AddArea({ kind }: { kind: AreaKind }) {
   )
 }
 
+/** an institution needs no area: it is made right away, the area can be drawn later */
+function AddInstitution() {
+  return (
+    <button class="primary" onClick={() => addEntity('institution', create.institution(project.value))}>
+      ＋ Institution
+    </button>
+  )
+}
+
 function AreaList({ kind }: { kind: AreaKind }) {
   const p = project.value
   const stats = kind === 'state' ? stateStats.value : kind === 'province' ? provinceStats.value : kind === 'culture' ? cultureStats.value : kind === 'religion' ? religionStats.value : null
@@ -40,6 +50,13 @@ function AreaList({ kind }: { kind: AreaKind }) {
   if (kind === 'culture') columns.push({ id: 'type', name: 'Typ', value: r => nameIn(p.catalog.cultureTypes, r.type as string) })
   if (kind === 'religion') columns.push({ id: 'type', name: 'Typ', value: r => nameIn(p.catalog.religionTypes, r.type as string) })
   if (kind === 'zone') columns.push({ id: 'type', name: 'Typ', value: r => nameIn(p.catalog.zoneTypes, r.type as string) })
+  if (kind === 'institution') {
+    columns.push(
+      { id: 'type', name: 'Art', value: r => nameIn(p.catalog.institutionTypes, r.type as string) },
+      { id: 'seat', name: 'Sitz', value: r => nameIn(p.cities, r.seatId as string) },
+      { id: 'state', name: 'Staat', value: r => nameIn(p.states, r.stateId as string) },
+    )
+  }
   if (stats) {
     columns.push(
       { id: 'area', name: 'km²', numeric: true, value: r => Math.round(stats.get(r.id)?.areaKm2 ?? 0), render: r => formatInt(stats.get(r.id)?.areaKm2 ?? 0) },
@@ -50,9 +67,9 @@ function AreaList({ kind }: { kind: AreaKind }) {
   return (
     <>
       <div class="list-actions">
-        <AddArea kind={kind} />
+        {kind === 'institution' ? <AddInstitution /> : <AddArea kind={kind} />}
       </div>
-      <Table rows={rows} columns={columns} selectedId={selection.value?.id} onRow={r => pick(kind, r.id)} groupBy={kind === 'province' ? [columns[1]] : undefined} />
+      <Table rows={rows} columns={columns} selectedId={selection.value?.id} onRow={r => pick(kind, r.id)} groupBy={kind === 'province' ? [columns[1]] : kind === 'institution' ? [columns[1], columns[3]] : undefined} />
       {kind === 'state' && (
         <p class="hint">
           Bevölkerung = Städte + Landfläche × Landbevölkerung je km². Fläche nach dem Zuschnitt an der Küste.
@@ -315,10 +332,12 @@ function Conflicts() {
 export function Overviews({ active, onChange }: { active: OverviewId; onChange: (id: OverviewId) => void }) {
   const p = project.value
   const tabs: { id: OverviewId; name: string; badge?: number }[] = [
+    { id: 'chronicle', name: 'Chronik', badge: source.value.events.length },
     { id: 'states', name: 'Staaten', badge: p.states.length },
     { id: 'cultures', name: 'Kulturen', badge: p.cultures.length },
     { id: 'religions', name: 'Religionen', badge: p.religions.length },
     { id: 'zones', name: 'Zonen', badge: p.zones.length },
+    { id: 'institutions', name: 'Institutionen', badge: p.institutions.length },
     { id: 'cities', name: 'Städte', badge: p.cities.length },
     { id: 'routes', name: 'Routen', badge: p.routes.length },
     { id: 'rivers', name: 'Flüsse', badge: p.rivers.length },
@@ -327,13 +346,14 @@ export function Overviews({ active, onChange }: { active: OverviewId; onChange: 
     { id: 'charts', name: 'Diagramme' },
     { id: 'conflicts', name: 'Konflikte', badge: conflicts.value.length },
   ]
-  const areaOf: Partial<Record<OverviewId, AreaKind>> = { states: 'state', cultures: 'culture', religions: 'religion', zones: 'zone' }
+  const areaOf: Partial<Record<OverviewId, AreaKind>> = { states: 'state', cultures: 'culture', religions: 'religion', zones: 'zone', institutions: 'institution' }
   const area = areaOf[active]
   return (
     <div class="overviews">
       <Tabs tabs={tabs} active={active} onChange={onChange} />
       <div class="overview-body">
         {area && (AREA_KINDS as readonly string[]).includes(area) && <AreaList kind={area} />}
+        {active === 'chronicle' && <Chronicle />}
         {active === 'cities' && <CityList />}
         {active === 'routes' && <RouteList />}
         {active === 'rivers' && <RiverList />}

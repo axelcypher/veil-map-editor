@@ -6,7 +6,7 @@ import { defaultKoppenClasses } from './catalog'
 import { bboxHit, bboxOf, distanceM } from './geo'
 import { create, newId, newProject, parseProject, serializeProject } from './project'
 import {
-  addEntity, busy, commit, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, snapCities, tool,
+  addEntity, busy, commit, commitSource, dirty, filePath, findEntity, list, notify, patchProject, placeType, project, resetProject, selection, snapCities, source, tool,
   updateEntity, type Tool,
 } from './store'
 import { avoidLand, dockEnds, followPoint, reshapeLine, settleJunctions, snapEnds } from './routing'
@@ -16,7 +16,7 @@ import {
   satellite as satelliteData, terrain,
 } from './terrain'
 import {
-  AREA_KINDS, type AreaBase, type AreaGeometry, type AreaKind, type EntityKind, type KoppenMatch, type LineGeometry, type LonLat,
+  AREA_KINDS, COLLECTION, type AreaBase, type AreaGeometry, type AreaKind, type EntityKind, type KoppenMatch, type LineGeometry, type LonLat,
   type PointGeometry, type Project, type River, type Route,
 } from './types'
 
@@ -108,7 +108,7 @@ async function recoveryFlush() {
       try {
         if (want === 'clear') await platform.recovery.clear()
         else {
-          const copy: RecoveryCopy = { savedAt: Date.now(), filePath: filePath.peek(), archive: fileIsArchive.peek(), project: project.peek() }
+          const copy: RecoveryCopy = { savedAt: Date.now(), filePath: filePath.peek(), archive: fileIsArchive.peek(), project: source.peek() }
           await platform.recovery.write(JSON.stringify(copy))
         }
       } catch (error) {
@@ -123,7 +123,7 @@ async function recoveryFlush() {
 /** keeps the crash copy in step with the project; call after the startup offer */
 export function startRecovery() {
   return effect(() => {
-    void project.value
+    void source.value
     recoveryWant = dirty.value ? 'write' : 'clear'
     recoveryFlush()
   })
@@ -233,7 +233,8 @@ export async function saveFile(saveAs = false) {
     if (!path) return false
   }
   try {
-    await platform.writeText(path, serializeProject(project.value))
+    // the stored project with its whole history, not the world of the year shown
+    await platform.writeText(path, serializeProject(source.value))
     filePath.value = path
     fileIsArchive.value = false
     dirty.value = false
@@ -254,7 +255,7 @@ export const lastArchive = signal<import('../platform').ArchiveReport | null>(nu
  * `pick`: ask for a target even when the open file already is an archive.
  */
 export async function saveArchive(pick = true) {
-  const p = project.value
+  const p = source.value
   let path = filePath.value
   if (pick || !path || !fileIsArchive.value) {
     path = await platform.pickSavePath('Als Archiv speichern', `${p.name || 'karte'}.veilmap`, ARCHIVE_FILTER)
@@ -468,7 +469,8 @@ function pointLineKm(point: LonLat, line: LonLat[], radius: number) {
 export const riverOrphans = signal<River[]>([])
 
 export async function importRivers(options: { path: string; threshold: number; minLengthKm: number; simplifyPx: number; cropSquare: boolean }) {
-  const p = project.value
+  // rivers are geography: they replace the old ones in every year, not as a change in one
+  const p = source.value
   let result
   try {
     result = await withBusy('Flüsse vektorisieren', () => platform.importRivers(options, p.planetRadius))
@@ -517,8 +519,8 @@ export async function importRivers(options: { path: string; threshold: number; m
   })
   const orphans = cared.filter(r => !taken.has(r.id))
   riverOrphans.value = orphans
-  commit({
-    ...project.value,
+  commitSource({
+    ...source.peek(),
     rivers: [...rivers, ...orphans],
     riverImport: { source: options.path, threshold: options.threshold, minLengthKm: options.minLengthKm, simplifyPx: options.simplifyPx, cropSquare: options.cropSquare, importedAt: Date.now() },
   })
@@ -590,7 +592,7 @@ const fromMulti = (coords: PcMulti): AreaGeometry | null => (coords.length ? { t
  * to them (clean shared borders), or both keep overlapping. Remembered per kind and machine.
  */
 export type BorderMode = 'cut' | 'fit' | 'overlap'
-const BORDER_DEFAULTS: Record<AreaKind, BorderMode> = { state: 'cut', province: 'cut', culture: 'overlap', religion: 'overlap', zone: 'overlap' }
+const BORDER_DEFAULTS: Record<AreaKind, BorderMode> = { state: 'cut', province: 'cut', culture: 'overlap', religion: 'overlap', zone: 'overlap', institution: 'overlap' }
 export const borderModes = signal<Record<AreaKind, BorderMode>>(readBorderModes())
 function readBorderModes(): Record<AreaKind, BorderMode> {
   try {
@@ -708,7 +710,7 @@ function selectionState() {
   return ''
 }
 
-const collectionOf = (kind: AreaKind) => ({ state: 'states', province: 'provinces', culture: 'cultures', religion: 'religions', zone: 'zones' } as const)[kind]
+const collectionOf = (kind: AreaKind) => COLLECTION[kind]
 
 /** screen pixels within which a route end snaps onto a city */
 const SNAP_PX = 12

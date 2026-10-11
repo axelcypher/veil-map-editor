@@ -24,7 +24,7 @@ import TileGrid from 'ol/tilegrid/TileGrid'
 import View from 'ol/View'
 import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
-import { AREA_KINDS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
+import { AREA_KINDS, COLLECTION as COLLECTIONS, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { isImageLayer } from '../model/catalog'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMode, type Tool } from '../model/store'
@@ -45,6 +45,7 @@ const KIND_LAYER: Record<EntityKind, LayerId> = {
   culture: 'cultures',
   religion: 'religions',
   zone: 'zones',
+  institution: 'institutions',
   city: 'cities',
   route: 'routes',
   river: 'rivers',
@@ -54,11 +55,7 @@ const KIND_LAYER: Record<EntityKind, LayerId> = {
 }
 const ALL_KINDS = Object.keys(KIND_LAYER) as EntityKind[]
 /** what a click picks first when things overlap */
-const PICK_ORDER: EntityKind[] = ['label', 'marker', 'city', 'regiment', 'route', 'river', 'zone', 'province', 'state', 'religion', 'culture']
-const COLLECTIONS: Record<EntityKind, keyof Project> = {
-  state: 'states', province: 'provinces', culture: 'cultures', religion: 'religions', zone: 'zones',
-  city: 'cities', route: 'routes', river: 'rivers', label: 'labels', marker: 'markers', regiment: 'regiments',
-}
+const PICK_ORDER: EntityKind[] = ['label', 'marker', 'city', 'regiment', 'route', 'river', 'zone', 'institution', 'province', 'state', 'religion', 'culture']
 
 export interface MapEvents {
   select(kind: EntityKind | null, id: string | null): void

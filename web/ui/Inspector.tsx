@@ -6,10 +6,10 @@ import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
 import { KIND_NAMES } from '../model/project'
-import { notify, project, removeEntity, selectedEntity, selection, snapCities, tool, updateEntity } from '../model/store'
+import { notify, project, removeEntity, selectedEntity, selection, snapCities, tool, updateEntity, year } from '../model/store'
 import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
-import type { AreaBase, City, Culture, Entity, EntityKind, Label, LonLat, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
+import type { AreaBase, City, Culture, Entity, EntityKind, Institution, Label, LonLat, Marker, Province, Regiment, Religion, River, Route, State, Zone, ZonePattern } from '../model/types'
 import { platform } from '../platform'
 import { regimentTotal } from '../map/styles'
 import { mapView } from './mapRef'
@@ -17,6 +17,7 @@ import { openStateDialog } from './StateDialogs'
 import { NoteLink, NotePicker } from './NoteLink'
 import { obsidianUrl } from '../model/obsidian'
 import { Check, Color, Field, Num, Section, Select, Text } from './components'
+import { EditYear, TimeSection } from './Timeline'
 
 function useUpdate<K extends EntityKind>(kind: K, id: string) {
   return (patch: Partial<Entity>, merge?: string) => updateEntity(kind, id, patch as never, merge)
@@ -229,6 +230,41 @@ function ZoneFields({ x }: { x: Zone }) {
       <Field label="Deckkraft">
         <Num value={x.opacity} min={0} max={1} step={0.05} onChange={v => up({ opacity: v } as Partial<Zone>, 'opacity')} />
       </Field>
+    </>
+  )
+}
+
+function InstitutionFields({ x }: { x: Institution }) {
+  const p = project.value
+  const up = useUpdate('institution', x.id)
+  const cities = [...p.cities].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+  return (
+    <>
+      <Field label="Art">
+        <Select value={x.type} onChange={v => up({ type: v } as Partial<Institution>)} options={typeOptions(p.catalog.institutionTypes)} empty="—" />
+      </Field>
+      <Field label="Sitz">
+        <Select value={x.seatId} onChange={v => up({ seatId: v } as Partial<Institution>)} options={cities.map(c => ({ id: c.id, name: c.name }))} empty="—" />
+      </Field>
+      <Field label="Staat" hint="dem sie angehört oder dient">
+        <Select value={x.stateId} onChange={v => up({ stateId: v } as Partial<Institution>)} options={typeOptions(p.states)} empty="—" />
+      </Field>
+      <Field label="Religion">
+        <Select value={x.religionId} onChange={v => up({ religionId: v } as Partial<Institution>)} options={typeOptions(p.religions)} empty="—" />
+      </Field>
+      <Field label="Kultur">
+        <Select value={x.cultureId} onChange={v => up({ cultureId: v } as Partial<Institution>)} options={typeOptions(p.cultures)} empty="—" />
+      </Field>
+      <Field label="Leitung">
+        <Text value={x.leader} onInput={v => up({ leader: v } as Partial<Institution>, 'leader')} placeholder="Name oder Gremium" />
+      </Field>
+      <Field label="Mitglieder" hint="leer = unbekannt">
+        <span class="inline">
+          <Num value={x.members} min={0} step={10} onChange={v => up({ members: Math.round(v) } as Partial<Institution>, 'members')} placeholder="unbekannt" />
+          {x.members != null && <button class="small" onClick={() => up({ members: null } as Partial<Institution>)}>leeren</button>}
+        </span>
+      </Field>
+      <p class="hint">Das Einflussgebiet ist freiwillig: unter „Fläche“ zeichnen, wo die Institution wirkt.</p>
     </>
   )
 }
@@ -638,12 +674,15 @@ export function Inspector() {
   return (
     <aside class="inspector">
       <header>
-        <span class="kind">{KIND_NAMES[kind][0]}</span>
+        <span class="kind">
+          {KIND_NAMES[kind][0]}
+          <EditYear kind={kind} id={entity.id} />
+        </span>
         <div class="header-actions">
           <button class="icon" title="Auf der Karte zeigen" onClick={() => mapView.current?.focus(kind, entity.id)}>
             ⌖
           </button>
-          <button class="icon danger" title="Löschen (Entf)" onClick={() => removeEntity(kind, entity.id)}>
+          <button class="icon danger" title={year.value != null ? 'Für immer löschen, in allen Jahren (Entf). Soll es nur enden: unter „Zeit“ ein Ende setzen.' : 'Löschen (Entf)'} onClick={() => removeEntity(kind, entity.id)}>
             🗑
           </button>
           <button class="icon" title="Schließen" onClick={() => (selection.value = null)}>
@@ -666,12 +705,14 @@ export function Inspector() {
         {kind === 'culture' && <CultureFields x={entity as Culture} />}
         {kind === 'religion' && <ReligionFields x={entity as Religion} />}
         {kind === 'zone' && <ZoneFields x={entity as Zone} />}
+        {kind === 'institution' && <InstitutionFields x={entity as Institution} />}
         {kind === 'city' && <CityFields c={entity as City} />}
         {kind === 'route' && <RouteFields r={entity as Route} />}
         {kind === 'river' && <RiverFields r={entity as River} />}
         {kind === 'label' && <LabelFields l={entity as Label} />}
         {kind === 'marker' && <MarkerFields m={entity as Marker} />}
         {kind === 'regiment' && <RegimentFields r={entity as Regiment} />}
+        <TimeSection kind={kind} id={entity.id} />
         {isArea(kind) && <AreaTools kind={kind} entity={entity as AreaBase} />}
         <Section title="Notiz">
           <Text multiline value={entity.description} onInput={v => up({ description: v }, 'description')} placeholder="Beschreibung, Geschichte, Besonderheiten …" />

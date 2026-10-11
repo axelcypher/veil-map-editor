@@ -422,3 +422,90 @@ button.link { background: none; border: none; padding: 0; min-height: 0; color: 
 button.link:hover:not(:disabled) { background: none; color: var(--text); }
 /* a recent project on the sync server */
 .menu .recent .ui-icon { margin-right: 5px; }
+
+/* the timeline: the bar under the map, the history of an element, the chronicle */
+.timeline-bar {
+  display: flex; align-items: center; gap: 12px; padding: 4px 12px; background: var(--chrome); border-top: 1px solid var(--line);
+  --thumb: 14px;
+}
+.tl-controls { display: flex; gap: 2px; }
+.tl-controls button { width: 30px; height: 30px; padding: 0; font-size: 13px; }
+.tl-year { display: flex; align-items: baseline; gap: 6px; flex: none; }
+.tl-year .year-input {
+  width: 84px; font-family: "Cinzel", serif; font-size: 18px; font-weight: 600; text-align: right; padding: 1px 6px;
+  background: transparent; border-color: transparent; color: var(--text);
+}
+.tl-year .year-input:hover { border-color: var(--line); }
+.tl-unit { color: var(--muted); font-family: "Forum", serif; font-size: 14px; }
+.tl-era { font-family: "Marcellus", serif; font-size: 12.5px; color: var(--accent-2); border-left: 3px solid; padding-left: 6px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.tl-track { position: relative; flex: 1; min-width: 160px; height: 34px; }
+.tl-track input[type="range"] { position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 30px; margin: 0; background: transparent; z-index: 2; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.tl-track input[type="range"]::-webkit-slider-runnable-track { height: 30px; background: transparent; }
+.tl-track input[type="range"]::-moz-range-track { height: 30px; background: transparent; }
+.tl-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: var(--thumb); height: var(--thumb); margin-top: calc(15px - var(--thumb) / 2); border-radius: 50%;
+  background: var(--text); border: 3px solid var(--accent); box-shadow: 0 0 0 2px var(--chrome);
+}
+.tl-track input[type="range"]::-moz-range-thumb { width: var(--thumb); height: var(--thumb); border-radius: 50%; background: var(--text); border: 3px solid var(--accent); box-sizing: border-box; }
+.tl-line { position: absolute; left: 0; right: 0; top: 14px; height: 2px; background: var(--line); border-radius: 1px; }
+.tl-progress { position: absolute; left: 0; top: 14px; height: 2px; background: var(--accent); border-radius: 1px; }
+/* marks sit on the line the thumb's middle travels */
+.tl-marks { position: absolute; left: calc(var(--thumb) / 2); right: calc(var(--thumb) / 2); top: 0; height: 30px; pointer-events: none; }
+.tl-era-band { position: absolute; top: 20px; height: 4px; opacity: 0.7; border-radius: 2px; }
+.tl-tick { position: absolute; top: 9px; width: 1px; height: 12px; background: var(--muted); opacity: 0.7; transform: translateX(-0.5px); }
+.tl-tick.own { background: var(--accent-2); opacity: 1; width: 2px; height: 16px; top: 7px; transform: translateX(-1px); }
+.tl-event {
+  position: absolute; top: -2px; height: 9px; min-width: 9px; padding: 0; min-height: 0; border: 1px solid #0006; border-radius: 5px;
+  transform: translateX(-4.5px); pointer-events: auto; cursor: pointer; z-index: 3;
+}
+.tl-event:hover, .tl-event.on { outline: 2px solid var(--text); outline-offset: 1px; }
+.tl-ends { position: absolute; left: 0; right: 0; bottom: -2px; display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); pointer-events: none; }
+@media (max-width: 1000px), (pointer: coarse) {
+  .timeline-bar { flex-wrap: wrap; row-gap: 0; gap: 8px; }
+  .tl-track { height: 40px; }
+  .tl-track { order: 10; flex-basis: 100%; }
+}
+@media (max-width: 600px) {
+  .tl-era { display: none; }
+}
+
+.year-input { width: 80px; }
+.time-mode { padding: 4px 8px; border-left: 3px solid var(--line); background: #ffffff06; border-radius: 3px; }
+.time-mode.dated { border-left-color: var(--accent); }
+.edit-year { margin-left: 8px; padding: 0 7px; border-radius: var(--round); background: var(--accent-soft); color: var(--text); font-size: 11px; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.change-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.change-list li { border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 6px; display: flex; flex-direction: column; gap: 4px; }
+.change-list li.current { border-color: var(--accent); background: var(--accent-soft); }
+.change-list li.future { opacity: 0.7; }
+.change-head { display: flex; gap: 6px; align-items: center; }
+.change-year { font-family: "Cinzel", serif; font-weight: 600; white-space: nowrap; }
+.change-fields { flex: 1; font-size: 12px; color: var(--muted); min-width: 0; }
+.change-actions { display: inline-flex; gap: 2px; align-items: center; }
+.change-actions .year-input { width: 66px; font-size: 11.5px; padding: 1px 4px; }
+
+.year-report { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.year-report li { padding: 3px 6px; border-radius: 3px; cursor: pointer; border-left: 3px solid var(--line); }
+.year-report li:hover { background: var(--panel-2); }
+.year-report li.begin { border-left-color: #6fae6a; }
+.year-report li.end { border-left-color: #b05a5a; cursor: default; }
+.year-report li.change { border-left-color: var(--accent); }
+.year-report li.event { border-left-color: var(--accent-2); }
+.year-report .what { color: var(--accent-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; margin-right: 4px; }
+.event-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.event-list li.future .event-row { opacity: 0.6; }
+.event-list li.on { border: 1px solid var(--accent); border-radius: var(--radius); padding-bottom: 6px; }
+.event-row { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: none; background: none; border-radius: var(--radius); padding: 4px 6px; }
+.event-row:hover:not(:disabled) { background: var(--panel-2); }
+.event-year { font-family: "Cinzel", serif; font-weight: 600; min-width: 64px; white-space: nowrap; }
+.event-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-editor { display: flex; flex-direction: column; gap: 6px; padding: 4px 8px 0; }
+.event-editor .chip .link { padding: 0; min-height: 0; }
+.ref-picker select { flex: 1; min-width: 0; }
+.timeline-setup { display: flex; flex-direction: column; gap: 6px; }
+.timeline-setup .year-input { width: 100px; }
+.era-list { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.era-list li { display: flex; gap: 6px; align-items: center; }
+.era-list input[type="text"] { flex: 1; min-width: 0; }
+button.danger { color: var(--danger); }
+button.danger:hover:not(:disabled) { border-color: var(--danger); }
+.subhead { margin-top: 10px; }
