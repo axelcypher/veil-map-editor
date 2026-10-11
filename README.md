@@ -69,7 +69,7 @@ Eine Zeitleiste hat einen **Basisstrang** und beliebig viele **abgeleitete Strä
 
 ## Ebenen der Welt
 
-Jedes Element liegt auf einer von drei Ebenen: **Himmel**, **Oberfläche** (Vorgabe) oder **Untergrund**. Der Schalter oben links auf der Karte wählt die Ebene; die Karte zeigt nur deren Elemente, und neue Elemente landen dort. Im Inspector verschiebt „Ebene“ ein Element auf eine andere; wer ein Element aus einer Liste wählt, springt auf seine Ebene. Die gezeigte Ebene merkt sich jedes Gerät wie Jahr und Strang.
+Jedes Element liegt auf einer von drei Ebenen: **Himmel**, **Oberfläche** (Vorgabe) oder **Untergrund**. Der Schalter oben links auf der Karte wählt die Ebene; die Karte zeigt nur deren Elemente, und neue Elemente landen dort. Im Inspector verschiebt „Ebene“ ein Element auf eine andere; Flächen (Staaten, Provinzen, Kulturen, Religionen, Zonen, Einflussgebiete) können unter „Ebenen“ auf mehreren zugleich liegen, etwa eine Kultur über und unter Tage; wer ein Element aus einer Liste wählt, springt auf seine Ebene. Die gezeigte Ebene merkt sich jedes Gerät wie Jahr und Strang.
 
 - **Himmel:** Die Grundkarte liegt unter einem hellen Schleier. Die Himmelshöhe steht neben dem Schalter (Vorgabe 2.500 m, gilt fürs Projekt); Land, das höher reicht, bleibt klar und erscheint ab dieser Höhe wie auf der Oberfläche. Der Schnitt folgt dem ≈10-km-Raster der Heightmap mit weichem Rand.
 - **Untergrund:** Die Grundkarte ist abgedunkelt. „Höhle zeichnen“ in der Werkzeugleiste (nur im Untergrund) legt eine Zone vom Typ „Höhle“ an, fast deckend und hell; danach wie jede Fläche erweitern, beschneiden oder freihand zeichnen. Fehlt der Typ in einem älteren Projekt, kommt er mit der ersten Höhle dazu. Tunnel und Gänge sind Routen auf der Untergrund-Ebene.
@@ -93,7 +93,7 @@ Alle Jahre stehen in der Rechnung des Basisstrangs.
 | `.visibility` an Element, Änderung, Ereignis | `{ <Strang-ID>: { show, from?, until? } }`: in einem Strang mit `inherit: "released"` gibt `show: true` frei, in einem mit `"all"` verbirgt `show: false`. `from`/`until` sind Meilenstein-IDs |
 | Element `.begin` | erstes Jahr, in dem es besteht; fehlt: offen |
 | Element `.end` | erstes Jahr, in dem es **nicht mehr** besteht; fehlt: besteht fort |
-| Element `.level` | `"sky"` oder `"underground"`; fehlt: Oberfläche. `levels.skyAltitude`: Himmelshöhe in Metern |
+| Element `.level` | `"sky"`, `"underground"` oder bei Flächen eine Liste wie `["surface", "underground"]`; fehlt: nur Oberfläche. `levels.skyAltitude`: Himmelshöhe in Metern |
 | Element `.life` | `{ <Strang-ID>: { begin, end } }`: abweichender Beginn und abweichendes Ende in einem Strang (und darunter) |
 | Element `.history` | `[{ year, set, strand?, note?, event?, from?, until?, visibility? }]`. Ab `year` gelten die Felder in `set`; `null` heißt geleert. Eine Änderung eines anderen Strangs als dem des Elements ist eine Abweichung. `from`/`until`: gilt nur zwischen diesen Meilensteinen |
 | Felder des Elements | sein Zustand vor der ersten Änderung |

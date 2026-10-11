@@ -55,8 +55,8 @@ export type WorldLevel = 'surface' | 'sky' | 'underground'
 export interface Base extends Owned {
   id: string
   name: string
-  /** absent: the surface */
-  level?: WorldLevel
+  /** absent: the surface; areas (a culture, a state …) may lie on several levels at once */
+  level?: WorldLevel | WorldLevel[]
   /** free text attached to the element */
   description: string
   /** vault-relative path of the linked Obsidian note, '' when none */

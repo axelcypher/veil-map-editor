@@ -5,7 +5,7 @@ import { BorderModeSelect } from './MapChrome'
 import { DiplomacyIcon, RegimentIcon } from './icons'
 import { cityMembership, cultureStats, provinceStats, religionStats, stateStats, type AreaStats } from '../model/derive'
 import { formatInt, formatKm, formatKm2, formatLonLat, lineLengthM } from '../model/geo'
-import { KIND_NAMES, LEVEL_NAMES, levelOf } from '../model/project'
+import { KIND_NAMES, LEVEL_NAMES, LEVEL_ORDER, levelsOf, storedLevel } from '../model/project'
 import { editStrand, notify, project, removeEntity, selectedEntity, selection, selectionHeld, snapCities, storedEntity, tool, updateEntity, year } from '../model/store'
 import { cityAt, fullPath } from '../model/routing'
 import { koppenAt, terrain } from '../model/terrain'
@@ -706,9 +706,26 @@ export function Inspector() {
         <Field label={kind === 'label' ? 'Text' : 'Name'}>
           <Text value={entity.name} onInput={v => up({ name: v }, 'name')} />
         </Field>
-        <Field label="Ebene" hint="Himmel, Oberfläche oder Untergrund; die Karte zeigt jeweils nur eine">
-          <Select value={levelOf(entity)} onChange={v => up({ level: v === 'surface' ? undefined : v })} options={(['sky', 'surface', 'underground'] as const).map(id => ({ id, name: LEVEL_NAMES[id] }))} />
-        </Field>
+        {isArea(kind) ? (
+          <Field label="Ebenen" hint="Eine Fläche kann auf mehreren Ebenen zugleich liegen">
+            <span class="inline level-checks">
+              {LEVEL_ORDER.map(l => {
+                const levels = levelsOf(entity)
+                const on = levels.includes(l)
+                return (
+                  <label key={l} class="check">
+                    <input type="checkbox" checked={on} disabled={on && levels.length === 1} onChange={() => up({ level: storedLevel(on ? levels.filter(x => x !== l) : [...levels, l]) })} />
+                    <span>{LEVEL_NAMES[l]}</span>
+                  </label>
+                )
+              })}
+            </span>
+          </Field>
+        ) : (
+          <Field label="Ebene" hint="Himmel, Oberfläche oder Untergrund; die Karte zeigt jeweils nur eine">
+            <Select value={levelsOf(entity)[0]} onChange={v => up({ level: storedLevel([v]) })} options={LEVEL_ORDER.map(id => ({ id, name: LEVEL_NAMES[id] }))} />
+          </Field>
+        )}
         {hasColor && (
           <Field label="Farbe">
             <Color value={(entity as AreaBase).color} onChange={v => up({ color: v } as Partial<AreaBase>, 'color')} />

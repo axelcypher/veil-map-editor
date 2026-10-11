@@ -280,6 +280,7 @@ tr.selected { background: var(--accent-soft) !important; }
 .level-switch button.active { background: var(--accent-soft); border-color: var(--accent); }
 .level-switch .sky-altitude { display: flex; align-items: center; gap: 4px; padding: 0 6px; color: var(--muted); font-size: 12px; }
 .level-switch .sky-altitude input { width: 72px; }
+.level-checks { gap: 12px; flex-wrap: wrap; }
 .marker-symbol-text { display: inline-block; min-width: 1em; text-align: center; }
 .compass.pos-tl { top: 52px; left: 12px; }
 .compass.pos-tr { top: 12px; right: 12px; }

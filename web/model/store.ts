@@ -74,7 +74,7 @@ export function setLevel(next: WorldLevel) {
 }
 
 /** a new element lies on the level shown */
-export function onLevel<T extends { level?: WorldLevel }>(entity: T): T {
+export function onLevel<T extends { level?: WorldLevel | WorldLevel[] }>(entity: T): T {
   const l = level.peek()
   return l === 'surface' ? entity : { ...entity, level: l }
 }

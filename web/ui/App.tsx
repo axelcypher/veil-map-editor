@@ -7,7 +7,7 @@ import { platform } from '../platform'
 import { autoCheck, checkAtStartup, checkForUpdate } from '../model/update'
 import { CLOUD_RECENT, confirmDialog, confirmRequest, editGeometry, handleArea, handleCreate, offerRecovery, reshapeRoute, startRecovery, newFile, openFile, recentFiles, saveArchive, saveFile } from '../model/actions'
 import { MapView } from '../map/MapView'
-import { LEVEL_NAMES, levelOf } from '../model/project'
+import { isOnLevel, LEVEL_NAMES, levelsOf } from '../model/project'
 import type { WorldLevel } from '../model/types'
 import { canRedo, canUndo, commit, findEntity, level, projectLoaded, dirty, notices, notify, picked, project, redo, removeEntity, selection, setLevel, setYear, source, tool, undo, view as shownView, year, differences, compareWorld, type Tool } from '../model/store'
 import { changeYears } from '../model/timeline'
@@ -373,7 +373,8 @@ function useMap(container: { current: HTMLDivElement | null }) {
       effect(() => {
         const s = selection.value
         const entity = s ? findEntity(s.kind, s.id, project.peek()) : undefined
-        if (entity) setLevel(levelOf(entity))
+        // on the level shown already (an area may lie on several): stay
+        if (entity && !isOnLevel(entity, level.peek())) setLevel(levelsOf(entity)[0])
       }),
       effect(() => view.applyProject(project.value)),
       effect(() => {

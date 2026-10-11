@@ -13,7 +13,7 @@ import { areaKm2, distanceM, formatInt, formatKm2, inArea } from './geo'
 import { filePath, source } from './store'
 import { clippedGeometry, gridHeight, islandAt, koppen, koppenAt, terrain } from './terrain'
 import { baseStrand, reckoningOf, resolveWorld, toOwnYear } from './timeline'
-import { LEVEL_NAMES } from './project'
+import { LEVEL_NAMES, levelsOf } from './project'
 import type { AreaBase, AreaGeometry, City, LonLat, NamedType, Project, WorldLevel } from './types'
 import { patchVault, vaultSettings, type OverviewSettings } from './vault'
 
@@ -138,7 +138,10 @@ const lonLat = ([lon, lat]: LonLat) =>
   `${Math.abs(lat).toFixed(1).replace('.', ',')}° ${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1).replace('.', ',')}° ${lon >= 0 ? 'O' : 'W'}`
 
 /** empty on the surface, so the column only shows when something lies elsewhere */
-const levelCell = (x: { level?: WorldLevel }) => (x.level && x.level !== 'surface' ? LEVEL_NAMES[x.level] : '')
+const levelCell = (x: { level?: WorldLevel | WorldLevel[] }) => {
+  const levels = levelsOf(x)
+  return levels.length === 1 && levels[0] === 'surface' ? '' : levels.map(l => LEVEL_NAMES[l]).join(', ')
+}
 const typeName = (types: NamedType[], id: string) => types.find(t => t.id === id)?.name ?? id
 
 function table(head: string[], rows: string[][]) {
@@ -333,7 +336,7 @@ export async function overviewBody(p: Project, when: string | null = null): Prom
       const cities = p.cities.filter(c => members.get(c.id)?.zones.includes(x.id)).length
       out.push(
         `- **${line(x.name)}** · ` +
-          facts([x.type && typeName(p.catalog.zoneTypes, x.type), x.level && LEVEL_NAMES[x.level], `Städte: ${cities}`, x.note && `Notiz: ${link(x.note)}`, x.description && line(x.description)]),
+          facts([x.type && typeName(p.catalog.zoneTypes, x.type), levelCell(x) && `Ebene: ${levelCell(x)}`, `Städte: ${cities}`, x.note && `Notiz: ${link(x.note)}`, x.description && line(x.description)]),
       )
     }
   }

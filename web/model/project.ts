@@ -53,7 +53,17 @@ export function newProject(): Project {
 }
 
 export const LEVEL_NAMES: Record<WorldLevel, string> = { surface: 'Oberfläche', sky: 'Himmel', underground: 'Untergrund' }
-export const levelOf = (entity: { level?: WorldLevel }): WorldLevel => entity.level ?? 'surface'
+export const LEVEL_ORDER: WorldLevel[] = ['sky', 'surface', 'underground']
+/** the levels an element lies on, top down */
+export const levelsOf = (entity: { level?: WorldLevel | WorldLevel[] }): WorldLevel[] =>
+  entity.level == null ? ['surface'] : Array.isArray(entity.level) ? LEVEL_ORDER.filter(l => (entity.level as WorldLevel[]).includes(l)) : [entity.level]
+export const isOnLevel = (entity: { level?: WorldLevel | WorldLevel[] }, level: WorldLevel) => levelsOf(entity).includes(level)
+/** as stored: nothing for the surface alone, one name, or a list */
+export function storedLevel(levels: WorldLevel[]): WorldLevel | WorldLevel[] | undefined {
+  const sorted = LEVEL_ORDER.filter(l => levels.includes(l))
+  if (sorted.length <= 1) return sorted[0] === 'surface' || !sorted.length ? undefined : sorted[0]
+  return sorted
+}
 
 export const defaultArchiveOptions = (): Project['archive'] => ({ quality: 85, lossless: false, heights: 'none', satellite: true, koppen: true, images: true })
 

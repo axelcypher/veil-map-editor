@@ -26,6 +26,7 @@ import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
 import { AREA_KINDS, COLLECTION as COLLECTIONS, type WorldLevel, type AreaGeometry, type Display, type Entity, type EntityKind, type Filter, type ImageLayerId, type KoppenClass, type LayerId, type LineGeometry, type LonLat, type Project } from '../model/types'
 import { isImageLayer } from '../model/catalog'
+import { isOnLevel } from '../model/project'
 import { areaKm2, formatKm, formatKm2, greatCircle, lineLengthM, smoothStroke } from '../model/geo'
 import { deleteVertices, freehand, freehandSmoothing, snapCities, type MeasureMode, type Tool } from '../model/store'
 import { shiftKeyOnly, singleClick } from 'ol/events/condition'
@@ -486,7 +487,7 @@ export class MapView {
     const held = ((project as unknown as Record<string, Partial<Record<string, Entity[]>> | undefined>)[GHOSTS]?.[COLLECTIONS[kind]] ?? []) as Entity[]
     const heldIds = new Set(held.map(e => e.id))
     const all = held.length ? [...(project[COLLECTIONS[kind]] as unknown as Entity[]), ...held] : (project[COLLECTIONS[kind]] as unknown as Entity[])
-    const entities = all.filter(e => (e.level ?? 'surface') === this.level)
+    const entities = all.filter(e => isOnLevel(e, this.level))
     const known = this.features[kind]
     const source = this.sources[kind]
     const seen = new Set<string>()
@@ -644,7 +645,7 @@ export class MapView {
     const s = this.selection
     if (!s || !(AREA_KINDS as readonly string[]).includes(s.kind)) return
     const entity = (this.project[COLLECTIONS[s.kind]] as unknown as Entity[]).find(e => e.id === s.id)
-    if (!entity?.geometry || (entity.level ?? 'surface') !== this.level) return
+    if (!entity?.geometry || !isOnLevel(entity, this.level)) return
     const feature = new Feature(toOl(entity.geometry))
     feature.set('entity', entity)
     this.editSource.addFeature(feature)
